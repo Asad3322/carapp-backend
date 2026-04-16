@@ -6,14 +6,13 @@ const generateIncidentDescription = async (req, res) => {
     const {
       description = "",
       mode = "",
-      language = "fr",
+      language = "auto",
       title = "",
       type = "",
       location = "",
       extraDetails = "",
     } = req.body;
 
-    
     if (mode === "incident_optimization") {
       if (!description.trim()) {
         return sendResponse(
@@ -42,8 +41,13 @@ const generateIncidentDescription = async (req, res) => {
       );
     }
 
-  
-    if (!title && !type && !location && !extraDetails) {
+    if (
+      !description.trim() &&
+      !title.trim() &&
+      !type.trim() &&
+      !location.trim() &&
+      !extraDetails.trim()
+    ) {
       return sendResponse(
         res,
         400,
@@ -54,10 +58,11 @@ const generateIncidentDescription = async (req, res) => {
 
     const generatedDescription = await generateDescriptionWithAI({
       mode: "generic_generation",
-      title,
-      type,
-      location,
-      extraDetails,
+      description: description.trim(),
+      title: title.trim(),
+      type: type.trim(),
+      location: location.trim(),
+      extraDetails: extraDetails.trim(),
       language,
     });
 

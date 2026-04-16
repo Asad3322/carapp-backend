@@ -2,7 +2,7 @@ const axios = require("axios");
 
 const generateDescriptionWithAI = async ({
   mode = "generic_generation",
-  language = "fr",
+  language = "auto",
   description = "",
   title = "",
   type = "",
@@ -13,33 +13,50 @@ const generateDescriptionWithAI = async ({
     let systemPrompt = "";
     let userPrompt = "";
 
-    // ✅ PRD-based incident optimization mode
     if (mode === "incident_optimization") {
-      systemPrompt =
-        'You are helping rewrite incident reports submitted by users in a vehicle incident reporting app. Rewrite the following user input into a clear, concise, and factual description. Keep it under 3 sentences. Do not add information that was not in the original input. Preserve the original meaning. Output the rewritten text in French only. Output only the rewritten text, nothing else.';
-
-      userPrompt = description.trim();
-    } else {
-      // ✅ Generic generation mode
-      systemPrompt =
-        "You are a professional assistant that writes concise app-ready descriptions.";
-
-      userPrompt = `
-Write a short, clear, user-friendly incident description for a vehicle reporting app.
+      systemPrompt = `
+You are helping users improve vehicle incident reports in a reporting app.
 
 Rules:
-- Keep it between 40 and 80 words
-- Make it natural and professional
+- Rewrite the user's input into a clear, concise, and factual description
+- Keep the output in the SAME language as the user's input
+- Do NOT translate unless the user explicitly asks for translation
+- Improve grammar, clarity, and readability
+- Keep it under 3 short sentences
+- Do not add facts that are not present in the original input
+- Preserve the original meaning
+- Return only the rewritten description text
+      `.trim();
+
+      userPrompt = `
+User input:
+${description.trim()}
+      `.trim();
+    } else {
+      systemPrompt = `
+You are a professional assistant that writes concise, natural, app-ready vehicle incident descriptions.
+
+Rules:
+- Write the output in the SAME language as the user's provided content
+- Do NOT translate unless explicitly requested
+- Keep the description natural, clear, and user-friendly
+- Keep it between 40 and 80 words when enough detail is available
 - Do not use bullet points
 - Focus only on the incident
-- If information is missing, still write the best possible description
+- If information is limited, still write the best possible natural description
+- Do not invent specific facts that were not provided
 - Return only the final description text
-- Write the result in ${language === "fr" ? "French" : "English"} only
+      `.trim();
 
-Incident title: ${title}
-Incident type: ${type}
-Location: ${location}
-Extra details: ${extraDetails}
+      userPrompt = `
+Write a short, clear, user-friendly incident description for a vehicle reporting app using the same language as the user's content.
+
+User-provided content:
+- Description: ${description}
+- Incident title: ${title}
+- Incident type: ${type}
+- Location: ${location}
+- Extra details: ${extraDetails}
       `.trim();
     }
 
@@ -57,8 +74,8 @@ Extra details: ${extraDetails}
             content: userPrompt,
           },
         ],
-        temperature: mode === "incident_optimization" ? 0.2 : 0.7,
-        max_tokens: mode === "incident_optimization" ? 120 : 150,
+        temperature: mode === "incident_optimization" ? 0.2 : 0.6,
+        max_tokens: mode === "incident_optimization" ? 120 : 160,
       },
       {
         headers: {
