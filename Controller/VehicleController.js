@@ -18,7 +18,12 @@ const normalizeVehicle = (vehicle) => ({
 
 const createVehicle = async (req, res) => {
   try {
-    const { vehicleName, licencePlate, ownerId = null } = req.body;
+    const { vehicleName, licencePlate } = req.body;
+    const ownerId = req.user?.id;
+
+    if (!ownerId) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
 
     if (!vehicleName || !licencePlate) {
       return sendResponse(
@@ -76,7 +81,7 @@ const createVehicle = async (req, res) => {
       licence_plate: normalizedPlate,
       vehicle_media: vehicleMediaUrls,
       insurance_certificate: insuranceUrls,
-      owner_id: ownerId || null,
+      owner_id: ownerId,
     };
 
     const { data, error } = await supabase
@@ -127,9 +132,16 @@ const createVehicle = async (req, res) => {
 
 const getAllVehicles = async (req, res) => {
   try {
+    const ownerId = req.user?.id;
+
+    if (!ownerId) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
+
     const { data, error } = await supabase
       .from("vehicles")
       .select("*")
+      .eq("owner_id", ownerId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -154,14 +166,25 @@ const getAllVehicles = async (req, res) => {
 
 const getSingleVehicle = async (req, res) => {
   try {
+    const ownerId = req.user?.id;
+
+    if (!ownerId) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
+
     const { data, error } = await supabase
       .from("vehicles")
       .select("*")
       .eq("id", req.params.id)
-      .single();
+      .eq("owner_id", ownerId)
+      .maybeSingle();
 
     if (error) {
       console.error("Supabase get single vehicle error:", error);
+      return sendResponse(res, 404, false, "Vehicle not found");
+    }
+
+    if (!data) {
       return sendResponse(res, 404, false, "Vehicle not found");
     }
 

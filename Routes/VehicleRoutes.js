@@ -3,6 +3,7 @@ const router = express.Router();
 
 const upload = require("../Utils/multer");
 const validate = require("../Middleware/validate");
+const authMiddleware = require("../Middleware/authMiddleware");
 const { createVehicleSchema } = require("../Validations/vehicleValidation");
 const {
   createVehicle,
@@ -12,6 +13,7 @@ const {
 
 router.post(
   "/",
+  authMiddleware,
   upload.fields([
     { name: "vehicleMedia", maxCount: 5 },
     { name: "insuranceDocument", maxCount: 5 },
@@ -20,7 +22,7 @@ router.post(
   createVehicle
 );
 
-router.get("/", getAllVehicles);
-router.get("/:id", getSingleVehicle);
+router.get("/", authMiddleware, getAllVehicles);
+router.get("/:id", authMiddleware, getSingleVehicle);
 
 module.exports = router;
