@@ -3,15 +3,21 @@ const router = express.Router();
 
 const upload = require("../Utils/multer");
 const validate = require("../Middleware/validate");
+const authMiddleware = require("../Middleware/authMiddleware");
 const { createReportSchema } = require("../Validations/reportValidation");
+
 const {
   createReport,
   getAllReports,
   getSingleReport,
+  getSentReports,
+  getReceivedReports,
+  updateReportStatus,
 } = require("../Controller/ReportController");
 
 router.post(
   "/",
+  authMiddleware,
   upload.fields([
     { name: "medias", maxCount: 10 },
     { name: "insuranceCertificate", maxCount: 5 },
@@ -20,7 +26,10 @@ router.post(
   createReport
 );
 
-router.get("/", getAllReports);
-router.get("/:id", getSingleReport);
+router.get("/", authMiddleware, getAllReports);
+router.get("/sent", authMiddleware, getSentReports);
+router.get("/received", authMiddleware, getReceivedReports);
+router.get("/:id", authMiddleware, getSingleReport);
+router.patch("/:id/status", authMiddleware, updateReportStatus);
 
 module.exports = router;
