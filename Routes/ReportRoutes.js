@@ -17,10 +17,9 @@ const {
 
 router.post(
   "/",
-  authMiddleware,
   upload.fields([
-    { name: "medias", maxCount: 10 },
-    { name: "insuranceCertificate", maxCount: 5 },
+    { name: "medias", maxCount: 5 },
+    { name: "insuranceCertificate", maxCount: 1 },
   ]),
   validate(createReportSchema),
   createReport

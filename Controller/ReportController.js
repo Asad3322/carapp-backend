@@ -40,7 +40,8 @@ const createReport = async (req, res) => {
   try {
     const { licencePlate, urgency, description } = req.body;
 
-    const reporterId = req.user?.id || req.body.reporterId || null;
+    // Reporter can now be anonymous if not logged in
+    const reporterId = req.user?.id || null;
 
     if (!licencePlate || !urgency || !description) {
       return sendResponse(
@@ -130,7 +131,7 @@ const createReport = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    // Notify owner ONLY if owner actually exists on matched vehicle
+    // Notify owner only if matched vehicle has a real owner
     if (ownerFound && receiverId) {
       await createNotification({
         userId: receiverId,
@@ -141,8 +142,7 @@ const createReport = async (req, res) => {
       });
     }
 
-    // Notify admin ALWAYS
-    // Change "profiles" to your actual users table if needed
+    // Notify admin always
     const { data: admins, error: adminsError } = await supabase
       .from("profiles")
       .select("id")
@@ -315,7 +315,11 @@ const updateReportStatus = async (req, res) => {
       return sendResponse(res, 404, false, "Report not found");
     }
 
-    const isOwner = report.receiver_id && currentUserId && report.receiver_id === currentUserId;
+    const isOwner =
+      report.receiver_id &&
+      currentUserId &&
+      report.receiver_id === currentUserId;
+
     const isAdmin = currentUserRole === "admin";
 
     if (!isOwner && !isAdmin) {
