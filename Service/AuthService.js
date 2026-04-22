@@ -3,6 +3,11 @@ const crypto = require("crypto");
 // const sendSMS = require("./smsService"); // TEMP DISABLED FOR MOCK FLOW
 
 const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
+  console.log("🔥 sendVerificationService hit");
+  console.log("contact:", contact);
+  console.log("role:", role);
+  console.log("vehicleId:", vehicleId);
+
   const normalizedRole = role || "reporter";
   const cleanedContact = contact?.trim();
 
@@ -12,16 +17,15 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
 
   const isEmail = cleanedContact.includes("@");
 
-  // =========================
-  // REPORTER FLOW → EMAIL MAGIC LINK
-  // =========================
   if (normalizedRole !== "vehicle_owner") {
     if (!isEmail) {
       throw new Error("Reporter verification requires an email address");
     }
 
+    const email = cleanedContact.toLowerCase();
+
     const { data, error } = await supabase.auth.signInWithOtp({
-      email: cleanedContact.toLowerCase(),
+      email,
       options: {
         emailRedirectTo: `${process.env.CLIENT_URL}/verify`,
         data: {
@@ -35,16 +39,13 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
     }
 
     return {
-      contact: cleanedContact,
+      contact: email,
       role: normalizedRole,
       channel: "email",
       data,
     };
   }
 
-  // =========================
-  // VEHICLE OWNER FLOW → MOCK SMS MAGIC LINK
-  // =========================
   if (isEmail) {
     throw new Error("Vehicle owner verification requires a phone number");
   }
@@ -53,22 +54,23 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  const { error: insertError } = await supabase.from("phone_verifications").insert([
-    {
-      phone,
-      token,
-      role: normalizedRole,
-      vehicle_id: vehicleId,
-      expires_at: expiresAt,
-      is_used: false,
-    },
-  ]);
+  const { error: insertError } = await supabase
+    .from("phone_verifications")
+    .insert([
+      {
+        phone,
+        token,
+        role: normalizedRole,
+        vehicle_id: vehicleId,
+        expires_at: expiresAt,
+        is_used: false,
+      },
+    ]);
 
   if (insertError) {
     throw new Error(insertError.message);
   }
 
-  // ✅ TEMP MOCK LINK INSTEAD OF REAL SMS
   const magicLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${token}`;
 
   console.log("🔗 MOCK PHONE VERIFICATION LINK:", magicLink);

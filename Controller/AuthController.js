@@ -8,9 +8,12 @@ const supabase = require("../Config/supabaseClient");
 
 const sendVerification = async (req, res) => {
   try {
+    console.log("🔥 sendVerification controller hit");
+    console.log("📦 req.body:", req.body);
+
     const { contact, role, vehicleId } = req.body;
 
-    if (!contact) {
+    if (!contact || !contact.trim()) {
       return sendResponse(res, 400, false, "Contact is required");
     }
 
@@ -22,7 +25,6 @@ const sendVerification = async (req, res) => {
 
     let verificationLink = null;
 
-    // ✅ MOCK SMS / PHONE LINK FOR TESTING
     if (result?.phone_token) {
       verificationLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${result.phone_token}`;
       console.log("🔗 MOCK PHONE VERIFICATION LINK:", verificationLink);
@@ -41,7 +43,19 @@ const sendVerification = async (req, res) => {
       }
     );
   } catch (error) {
-    return sendResponse(res, 500, false, error.message);
+    console.error("❌ sendVerification error:", error.message);
+
+    const knownErrors = [
+      "Contact is required",
+      "Reporter verification requires an email address",
+      "Vehicle owner verification requires a phone number",
+    ];
+
+    if (knownErrors.includes(error.message)) {
+      return sendResponse(res, 400, false, error.message);
+    }
+
+    return sendResponse(res, 500, false, error.message || "Internal server error");
   }
 };
 
@@ -57,7 +71,8 @@ const verifyPhoneMagicLink = async (req, res) => {
       vehicleId: verification.vehicle_id,
     });
   } catch (error) {
-    return sendResponse(res, 400, false, error.message);
+    console.error("verifyPhoneMagicLink error:", error);
+    return sendResponse(res, 400, false, error.message || "Invalid verification link");
   }
 };
 
@@ -76,7 +91,6 @@ const createProfileAfterAuth = async (req, res) => {
     const existingProfile = await getUserByContactService({ email, phone });
 
     if (existingProfile) {
-      // If owner flow and vehicle is pending, link it even if profile exists
       if (role === "vehicle_owner" && vehicleId) {
         await supabase
           .from("vehicles")
@@ -121,7 +135,6 @@ const createProfileAfterAuth = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    // Link onboarding vehicle after owner verification
     if (role === "vehicle_owner" && vehicleId) {
       const { data: linkedVehicle } = await supabase
         .from("vehicles")
@@ -153,7 +166,8 @@ const createProfileAfterAuth = async (req, res) => {
 
     return sendResponse(res, 201, true, "Profile created successfully", data);
   } catch (error) {
-    return sendResponse(res, 500, false, error.message);
+    console.error("createProfileAfterAuth error:", error);
+    return sendResponse(res, 500, false, error.message || "Something went wrong");
   }
 };
 
