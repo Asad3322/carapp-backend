@@ -20,11 +20,10 @@ const authMiddleware = async (req, res, next) => {
       return sendResponse(res, 401, false, "Invalid or expired token");
     }
 
-    // 🔥 GET USER ROLE FROM YOUR DB (profiles table)
     const { data: profile, error: profileError } = await supabase
-      .from("profiles") // ⚠️ change to "users" if you use users table
-      .select("id, role")
-      .eq("id", user.id)
+      .from("profiles")
+      .select("id, auth_user_id, role, username, phone, email")
+      .eq("auth_user_id", user.id)
       .maybeSingle();
 
     if (profileError) {
@@ -32,11 +31,13 @@ const authMiddleware = async (req, res, next) => {
       return sendResponse(res, 500, false, "Error fetching user profile");
     }
 
-    // ✅ FINAL USER OBJECT FOR BACKEND
     req.user = {
       id: user.id,
-      email: user.email,
-      role: profile?.role || "user", // fallback if role not set
+      email: user.email || null,
+      phone: user.phone || null,
+      role: profile?.role || "user",
+      profileId: profile?.id || null,
+      username: profile?.username || null,
     };
 
     next();

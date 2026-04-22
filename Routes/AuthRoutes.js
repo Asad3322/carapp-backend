@@ -5,19 +5,17 @@ const authMiddleware = require("../Middleware/authMiddleware");
 
 const {
   sendVerification,
+  verifyPhoneMagicLink,
   createProfileAfterAuth,
 } = require("../Controller/AuthController");
 
 const supabase = require("../Config/supabaseClient");
 const sendResponse = require("../Utils/sendResponse");
 
-// ✅ Send verification (magic link)
 router.post("/send-verification", sendVerification);
-
-// ✅ Create profile (after login)
+router.get("/verify-phone-link", verifyPhoneMagicLink);
 router.post("/create-profile", authMiddleware, createProfileAfterAuth);
 
-// ✅ Get current user
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const { data: profile, error } = await supabase

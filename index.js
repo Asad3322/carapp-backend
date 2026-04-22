@@ -7,6 +7,7 @@ const userRouter = require("./Routes/UserRoutes");
 const reportRouter = require("./Routes/ReportRoutes");
 const vehicleRouter = require("./Routes/VehicleRoutes");
 const aiRouter = require("./Routes/AiRoutes");
+const testSmsRouter = require("./Routes/testSmsRoute");
 
 console.log("SUPABASE URL:", process.env.SUPABASE_URL);
 console.log(
@@ -16,6 +17,14 @@ console.log(
 console.log(
   "OPENROUTER KEY:",
   process.env.OPENROUTER_API_KEY ? "Loaded" : "Missing",
+);
+console.log(
+  "OVH APP KEY:",
+  process.env.OVH_APP_KEY ? "Loaded" : "Missing",
+);
+console.log(
+  "OVH SERVICE NAME:",
+  process.env.OVH_SMS_SERVICE_NAME || "Missing",
 );
 
 const app = express();
@@ -51,11 +60,15 @@ app.get("/", (req, res) => {
   res.send("🚀 CARAPP Backend Running...");
 });
 
+// Existing routes
 app.use("/auth", authRouter);
 app.use("/users", userRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/vehicles", vehicleRouter);
 app.use("/api/ai", aiRouter);
+
+// New SMS test route
+app.use("/api", testSmsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
