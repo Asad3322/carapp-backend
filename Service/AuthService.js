@@ -17,6 +17,9 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
 
   const isEmail = cleanedContact.includes("@");
 
+  // =========================
+  // REPORTER FLOW → EMAIL MAGIC LINK
+  // =========================
   if (normalizedRole !== "vehicle_owner") {
     if (!isEmail) {
       throw new Error("Reporter verification requires an email address");
@@ -44,6 +47,13 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
       channel: "email",
       data,
     };
+  }
+
+  // =========================
+  // VEHICLE OWNER FLOW → MOCK SMS MAGIC LINK
+  // =========================
+  if (!vehicleId) {
+    throw new Error("Vehicle ID is required for owner verification");
   }
 
   if (isEmail) {

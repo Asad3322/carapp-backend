@@ -49,13 +49,19 @@ const sendVerification = async (req, res) => {
       "Contact is required",
       "Reporter verification requires an email address",
       "Vehicle owner verification requires a phone number",
+      "Vehicle ID is required for owner verification",
     ];
 
     if (knownErrors.includes(error.message)) {
       return sendResponse(res, 400, false, error.message);
     }
 
-    return sendResponse(res, 500, false, error.message || "Internal server error");
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Internal server error"
+    );
   }
 };
 
@@ -72,7 +78,12 @@ const verifyPhoneMagicLink = async (req, res) => {
     });
   } catch (error) {
     console.error("verifyPhoneMagicLink error:", error);
-    return sendResponse(res, 400, false, error.message || "Invalid verification link");
+    return sendResponse(
+      res,
+      400,
+      false,
+      error.message || "Invalid verification link"
+    );
   }
 };
 
@@ -167,7 +178,12 @@ const createProfileAfterAuth = async (req, res) => {
     return sendResponse(res, 201, true, "Profile created successfully", data);
   } catch (error) {
     console.error("createProfileAfterAuth error:", error);
-    return sendResponse(res, 500, false, error.message || "Something went wrong");
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Something went wrong"
+    );
   }
 };
 
