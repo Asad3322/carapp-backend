@@ -1,7 +1,11 @@
 const supabase = require("../Config/supabaseClient");
 const crypto = require("crypto");
-// const sendSMS = require("./smsService"); // TEMP DISABLED FOR MOCK FLOW
 
+// ================= NORMALIZERS =================
+const normalizeEmail = (email = "") => email.trim().toLowerCase();
+const normalizePhone = (phone = "") => phone.replace(/\s/g, "");
+
+// ================= SEND VERIFICATION =================
 const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
   console.log("🔥 sendVerificationService hit");
   console.log("contact:", contact);
@@ -17,22 +21,22 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
 
   const isEmail = cleanedContact.includes("@");
 
-  // =========================
-  // REPORTER FLOW → EMAIL MAGIC LINK
-  // =========================
-  if (normalizedRole !== "vehicle_owner") {
+  // ====================================================
+  // 🟦 REPORTER FLOW (EMAIL)
+  // ====================================================
+  if (normalizedRole === "reporter") {
     if (!isEmail) {
       throw new Error("Reporter verification requires an email address");
     }
 
-    const email = cleanedContact.toLowerCase();
+    const email = normalizeEmail(cleanedContact);
 
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: `${process.env.CLIENT_URL}/verify`,
         data: {
-          role: normalizedRole,
+          role: "reporter",
         },
       },
     });
@@ -43,67 +47,76 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
 
     return {
       contact: email,
-      role: normalizedRole,
+      role: "reporter",
       channel: "email",
       data,
     };
   }
 
-  // =========================
-  // VEHICLE OWNER FLOW → MOCK SMS MAGIC LINK
-  // =========================
-  if (!vehicleId) {
-    throw new Error("Vehicle ID is required for owner verification");
+  // ====================================================
+  // 🟩 VEHICLE OWNER FLOW (PHONE)
+  // ====================================================
+  if (normalizedRole === "vehicle_owner") {
+    if (!vehicleId) {
+      throw new Error("Vehicle ID is required for owner verification");
+    }
+
+    if (isEmail) {
+      throw new Error("Vehicle owner verification requires a phone number");
+    }
+
+    const phone = normalizePhone(cleanedContact);
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const { error: insertError } = await supabase
+      .from("phone_verifications")
+      .insert([
+        {
+          phone,
+          token,
+          role: "vehicle_owner",
+          vehicle_id: vehicleId,
+          expires_at: expiresAt,
+          is_used: false,
+        },
+      ]);
+
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+
+    const magicLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${token}`;
+
+    console.log("🔗 MOCK PHONE VERIFICATION LINK:", magicLink);
+
+    return {
+      contact: phone,
+      role: "vehicle_owner",
+      channel: "sms",
+      expiresAt,
+      phone_token: token,
+      magicLink,
+    };
   }
 
-  if (isEmail) {
-    throw new Error("Vehicle owner verification requires a phone number");
-  }
-
-  const phone = cleanedContact.replace(/\s/g, "");
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-  const { error: insertError } = await supabase
-    .from("phone_verifications")
-    .insert([
-      {
-        phone,
-        token,
-        role: normalizedRole,
-        vehicle_id: vehicleId,
-        expires_at: expiresAt,
-        is_used: false,
-      },
-    ]);
-
-  if (insertError) {
-    throw new Error(insertError.message);
-  }
-
-  const magicLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${token}`;
-
-  console.log("🔗 MOCK PHONE VERIFICATION LINK:", magicLink);
-
-  return {
-    contact: phone,
-    role: normalizedRole,
-    channel: "sms",
-    expiresAt,
-    phone_token: token,
-    magicLink,
-  };
+  // ====================================================
+  // ❌ INVALID ROLE
+  // ====================================================
+  throw new Error("Invalid role provided");
 };
 
+// ================= GET USER =================
 const getUserByContactService = async ({ email = null, phone = null }) => {
   if (!email && !phone) return null;
 
   let query = supabase.from("profiles").select("*");
 
   if (email) {
-    query = query.eq("email", email);
+    query = query.eq("email", normalizeEmail(email));
   } else {
-    query = query.eq("phone", phone);
+    query = query.eq("phone", normalizePhone(phone));
   }
 
   const { data, error } = await query.maybeSingle();
@@ -115,6 +128,7 @@ const getUserByContactService = async ({ email = null, phone = null }) => {
   return data;
 };
 
+// ================= VERIFY PHONE LINK =================
 const verifyPhoneMagicLinkService = async (token) => {
   if (!token) {
     throw new Error("Verification token is required");
@@ -139,6 +153,7 @@ const verifyPhoneMagicLinkService = async (token) => {
     throw new Error("Verification link expired");
   }
 
+  // mark as used
   const { error: markUsedError } = await supabase
     .from("phone_verifications")
     .update({ is_used: true })

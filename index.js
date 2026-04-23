@@ -61,7 +61,7 @@ app.get("/", (req, res) => {
 });
 
 // Existing routes
-app.use("/auth", authRouter);
+app.use("/api/auth", authRouter);
 app.use("/users", userRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/vehicles", vehicleRouter);
