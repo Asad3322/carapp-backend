@@ -6,6 +6,7 @@ const {
 const sendResponse = require("../Utils/sendResponse");
 const supabase = require("../Config/supabaseClient");
 
+// ================= SEND VERIFICATION =================
 const sendVerification = async (req, res) => {
   try {
     console.log("🔥 sendVerification controller hit");
@@ -45,17 +46,6 @@ const sendVerification = async (req, res) => {
   } catch (error) {
     console.error("❌ sendVerification error:", error.message);
 
-    const knownErrors = [
-      "Contact is required",
-      "Reporter verification requires an email address",
-      "Vehicle owner verification requires a phone number",
-      "Vehicle ID is required for owner verification",
-    ];
-
-    if (knownErrors.includes(error.message)) {
-      return sendResponse(res, 400, false, error.message);
-    }
-
     return sendResponse(
       res,
       500,
@@ -65,6 +55,7 @@ const sendVerification = async (req, res) => {
   }
 };
 
+// ================= VERIFY PHONE LINK =================
 const verifyPhoneMagicLink = async (req, res) => {
   try {
     const { phone_token } = req.query;
@@ -87,6 +78,7 @@ const verifyPhoneMagicLink = async (req, res) => {
   }
 };
 
+// ================= CREATE PROFILE AFTER AUTH =================
 const createProfileAfterAuth = async (req, res) => {
   try {
     const authUser = req.user;
@@ -101,17 +93,27 @@ const createProfileAfterAuth = async (req, res) => {
 
     const existingProfile = await getUserByContactService({ email, phone });
 
+    // ================= EXISTING PROFILE =================
     if (existingProfile) {
       if (role === "vehicle_owner" && vehicleId) {
-        await supabase
+        const { data: claimedVehicle, error: claimError } = await supabase
           .from("vehicles")
           .update({
             owner_id: authUser.id,
             is_claimed: true,
             registration_source: "claimed_after_onboarding",
+            updated_at: new Date().toISOString(),
           })
           .eq("id", vehicleId)
-          .is("owner_id", null);
+          .select("*")
+          .maybeSingle();
+
+        console.log("🚗 CLAIM RESULT (existingProfile):", {
+          vehicleId,
+          userId: authUser.id,
+          claimedVehicle,
+          claimError,
+        });
       }
 
       return sendResponse(
@@ -123,6 +125,7 @@ const createProfileAfterAuth = async (req, res) => {
       );
     }
 
+    // ================= CREATE NEW PROFILE =================
     const username = `user_${Math.random().toString(36).slice(2, 8)}`;
 
     const { data, error } = await supabase
@@ -146,18 +149,26 @@ const createProfileAfterAuth = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
+    // ================= CLAIM VEHICLE AFTER PROFILE CREATE =================
     if (role === "vehicle_owner" && vehicleId) {
-      const { data: linkedVehicle } = await supabase
+      const { data: linkedVehicle, error: claimError } = await supabase
         .from("vehicles")
         .update({
           owner_id: authUser.id,
           is_claimed: true,
           registration_source: "claimed_after_onboarding",
+          updated_at: new Date().toISOString(),
         })
         .eq("id", vehicleId)
-        .is("owner_id", null)
         .select("*")
         .maybeSingle();
+
+      console.log("🚗 CLAIM RESULT (newProfile):", {
+        vehicleId,
+        userId: authUser.id,
+        linkedVehicle,
+        claimError,
+      });
 
       if (linkedVehicle) {
         await supabase
