@@ -8,8 +8,6 @@ const {
   createVehicleOnboarding,
   createVehicle,
   claimVehicle,
-  claimVehicleByOwnerPhone,
-  getVehiclesByOwnerPhone,
   getAllVehicles,
   getSingleVehicle,
 } = require("../Controller/VehicleController");
@@ -24,11 +22,6 @@ router.post(
   ]),
   createVehicleOnboarding
 );
-
-// ================= PUBLIC OWNER PHONE FLOW =================
-// NO SUPABASE TOKEN REQUIRED
-router.post("/claim-owner-phone", claimVehicleByOwnerPhone);
-router.get("/owner-phone", getVehiclesByOwnerPhone);
 
 // ================= AUTH ROUTE =================
 router.post(
