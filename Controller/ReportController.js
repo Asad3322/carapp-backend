@@ -36,12 +36,29 @@ const createNotification = async ({
   }
 };
 
+const getProfileIdFromAuthUserId = async (authUserId) => {
+  if (!authUserId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getProfileIdFromAuthUserId error:", error);
+    return null;
+  }
+
+  return data?.id || null;
+};
+
 const createReport = async (req, res) => {
   try {
     const { licencePlate, urgency, description } = req.body;
 
-    // Reporter can now be anonymous if not logged in
-    const reporterId = req.user?.id || null;
+    const reporterAuthId = req.user?.id || null;
+    const reporterProfileId = await getProfileIdFromAuthUserId(reporterAuthId);
 
     if (!licencePlate || !urgency || !description) {
       return sendResponse(
@@ -76,9 +93,19 @@ const createReport = async (req, res) => {
 
     if (vehicle) {
       vehicleId = vehicle.id;
-      receiverId = vehicle.owner_id || null;
       vehicleName = vehicle.vehicle_name || null;
-      ownerFound = !!vehicle.owner_id;
+
+      if (vehicle.owner_id) {
+        const ownerProfileId = await getProfileIdFromAuthUserId(vehicle.owner_id);
+
+        if (ownerProfileId) {
+          receiverId = ownerProfileId;
+          ownerFound = true;
+        } else {
+          receiverId = null;
+          ownerFound = false;
+        }
+      }
     }
 
     const mediaUrls = [];
@@ -109,15 +136,15 @@ const createReport = async (req, res) => {
       insurance_certificate: insuranceUrls,
       medias: mediaUrls,
 
-      reporter_id: reporterId,
-      receiver_id: ownerFound ? receiverId : null,
+      reporter_id: reporterProfileId,
+      receiver_id: receiverId,
       vehicle_id: ownerFound ? vehicleId : null,
 
-      plate_registered: !!vehicleId,
+      plate_registered: ownerFound,
       flow_type: ownerFound ? "registered_plate" : "unregistered_plate",
       status: ownerFound ? "reported" : "pending_registration",
 
-      is_anonymous: !reporterId,
+      is_anonymous: !reporterProfileId,
     };
 
     const { data, error } = await supabase
@@ -131,7 +158,6 @@ const createReport = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    // Notify owner only if matched vehicle has a real owner
     if (ownerFound && receiverId) {
       await createNotification({
         userId: receiverId,
@@ -142,7 +168,6 @@ const createReport = async (req, res) => {
       });
     }
 
-    // Notify admin always
     const { data: admins, error: adminsError } = await supabase
       .from("profiles")
       .select("id")
@@ -227,16 +252,17 @@ const getSingleReport = async (req, res) => {
 
 const getSentReports = async (req, res) => {
   try {
-    const reporterId = req.user?.id || req.params.userId || req.query.userId;
+    const authUserId = req.user?.id || req.params.userId || req.query.userId;
+    const reporterProfileId = await getProfileIdFromAuthUserId(authUserId);
 
-    if (!reporterId) {
-      return sendResponse(res, 400, false, "Reporter id is required");
+    if (!reporterProfileId) {
+      return sendResponse(res, 200, true, "Sent reports fetched successfully", []);
     }
 
     const { data, error } = await supabase
       .from("reports")
       .select("*")
-      .eq("reporter_id", reporterId)
+      .eq("reporter_id", reporterProfileId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -259,16 +285,23 @@ const getSentReports = async (req, res) => {
 
 const getReceivedReports = async (req, res) => {
   try {
-    const receiverId = req.user?.id || req.params.userId || req.query.userId;
+    const authUserId = req.user?.id || req.params.userId || req.query.userId;
+    const receiverProfileId = await getProfileIdFromAuthUserId(authUserId);
 
-    if (!receiverId) {
-      return sendResponse(res, 400, false, "Receiver id is required");
+    if (!receiverProfileId) {
+      return sendResponse(
+        res,
+        200,
+        true,
+        "Received reports fetched successfully",
+        []
+      );
     }
 
     const { data, error } = await supabase
       .from("reports")
       .select("*")
-      .eq("receiver_id", receiverId)
+      .eq("receiver_id", receiverProfileId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -293,7 +326,8 @@ const updateReportStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const currentUserId = req.user?.id || req.body.userId || null;
+    const authUserId = req.user?.id || req.body.userId || null;
+    const currentProfileId = await getProfileIdFromAuthUserId(authUserId);
     const currentUserRole = req.user?.role || null;
 
     if (!status) {
@@ -317,8 +351,8 @@ const updateReportStatus = async (req, res) => {
 
     const isOwner =
       report.receiver_id &&
-      currentUserId &&
-      report.receiver_id === currentUserId;
+      currentProfileId &&
+      report.receiver_id === currentProfileId;
 
     const isAdmin = currentUserRole === "admin";
 
