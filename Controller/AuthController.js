@@ -82,14 +82,23 @@ const verifyPhoneMagicLink = async (req, res) => {
 const createProfileAfterAuth = async (req, res) => {
   try {
     const authUser = req.user;
-    const { role, verifiedPhone, vehicleId } = req.body;
+
+    const {
+      role,
+      verifiedPhone,
+      vehicleId,
+      username: bodyUsername,
+      name: bodyName,
+      profileImage,
+      avatar_url,
+    } = req.body;
 
     if (!authUser) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
-    const email = authUser.email || null;
-    const phone = verifiedPhone || authUser.phone || null;
+    const email = authUser.email || req.body.email || null;
+    const phone = verifiedPhone || req.body.phone || authUser.phone || null;
 
     const existingProfile = await getUserByContactService({ email, phone });
 
@@ -126,18 +135,28 @@ const createProfileAfterAuth = async (req, res) => {
     }
 
     // ================= CREATE NEW PROFILE =================
-    const username = `user_${Math.random().toString(36).slice(2, 8)}`;
+    // FIX:
+    // Use username/name sent from frontend first.
+    // Only generate default username if frontend did not send one.
+    const requestedUsername =
+      bodyUsername ||
+      bodyName ||
+      authUser.user_metadata?.name ||
+      `user_${Math.random().toString(36).slice(2, 8)}`;
+
+    const requestedName = bodyName || requestedUsername;
 
     const { data, error } = await supabase
       .from("profiles")
       .insert([
         {
           auth_user_id: authUser.id,
-          name: authUser.user_metadata?.name || "",
+          name: requestedName,
           email,
           phone,
           role: role || "reporter",
-          username,
+          username: requestedUsername,
+          avatar_url: avatar_url || profileImage || null,
           language: "French",
           primary_contact: role === "vehicle_owner" ? "SMS" : "Email",
         },
