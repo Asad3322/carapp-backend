@@ -78,6 +78,31 @@ const verifyPhoneMagicLink = async (req, res) => {
   }
 };
 
+const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
+  try {
+    if (!profileId || !vehicleId || !licencePlate) return;
+
+    const { error } = await supabase
+      .from("reports")
+      .update({
+        receiver_id: profileId,
+        vehicle_id: vehicleId,
+        plate_registered: true,
+        flow_type: "registered_plate",
+        status: "reported",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("licence_plate", licencePlate)
+      .is("receiver_id", null);
+
+    if (error) {
+      console.error("Auto-link reports after profile create error:", error);
+    }
+  } catch (error) {
+    console.error("linkOldReportsToOwner error:", error);
+  }
+};
+
 // ================= CREATE PROFILE AFTER AUTH =================
 const createProfileAfterAuth = async (req, res) => {
   try {
@@ -123,6 +148,14 @@ const createProfileAfterAuth = async (req, res) => {
           claimedVehicle,
           claimError,
         });
+
+        if (claimedVehicle) {
+          await linkOldReportsToOwner({
+            profileId: existingProfile.id,
+            vehicleId: claimedVehicle.id,
+            licencePlate: claimedVehicle.licence_plate,
+          });
+        }
       }
 
       return sendResponse(
@@ -135,9 +168,6 @@ const createProfileAfterAuth = async (req, res) => {
     }
 
     // ================= CREATE NEW PROFILE =================
-    // FIX:
-    // Use username/name sent from frontend first.
-    // Only generate default username if frontend did not send one.
     const requestedUsername =
       bodyUsername ||
       bodyName ||
@@ -190,18 +220,11 @@ const createProfileAfterAuth = async (req, res) => {
       });
 
       if (linkedVehicle) {
-        await supabase
-          .from("reports")
-          .update({
-            receiver_id: authUser.id,
-            vehicle_id: linkedVehicle.id,
-            plate_registered: true,
-            flow_type: "registered_plate",
-            status: "reported",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("licence_plate", linkedVehicle.licence_plate)
-          .is("receiver_id", null);
+        await linkOldReportsToOwner({
+          profileId: data.id,
+          vehicleId: linkedVehicle.id,
+          licencePlate: linkedVehicle.licence_plate,
+        });
       }
     }
 

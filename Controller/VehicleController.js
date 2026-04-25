@@ -18,6 +18,48 @@ const normalizeVehicle = (vehicle) => ({
       : "",
 });
 
+const getProfileIdFromAuthUserId = async (authUserId) => {
+  if (!authUserId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getProfileIdFromAuthUserId error:", error);
+    return null;
+  }
+
+  return data?.id || null;
+};
+
+const linkOldReportsToOwner = async ({ authUserId, profileId, vehicleId, licencePlate }) => {
+  try {
+    if (!authUserId || !profileId || !vehicleId || !licencePlate) return;
+
+    const { error } = await supabase
+      .from("reports")
+      .update({
+        receiver_id: profileId,
+        vehicle_id: vehicleId,
+        plate_registered: true,
+        flow_type: "registered_plate",
+        status: "reported",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("licence_plate", normalizePlate(licencePlate))
+      .is("receiver_id", null);
+
+    if (error) {
+      console.error("Auto-link old reports error:", error);
+    }
+  } catch (error) {
+    console.error("linkOldReportsToOwner error:", error);
+  }
+};
+
 // ================= CREATE VEHICLE (ONBOARDING - PUBLIC) =================
 const createVehicleOnboarding = async (req, res) => {
   try {
@@ -123,11 +165,11 @@ const createVehicle = async (req, res) => {
   try {
     const { vehicleName, licencePlate } = req.body;
 
-    // IMPORTANT:
-    // Your vehicles.owner_id is storing auth_user_id, not profile id
-    const ownerId = req.user?.id || null;
+    const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
 
-    if (!ownerId) {
+    if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -187,7 +229,7 @@ const createVehicle = async (req, res) => {
       licence_plate: normalizedPlate,
       vehicle_media: vehicleMediaUrls,
       insurance_certificate: insuranceUrls,
-      owner_id: ownerId,
+      owner_id: ownerAuthId,
       is_claimed: true,
       registration_source: "registered_user",
     };
@@ -203,22 +245,12 @@ const createVehicle = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    try {
-      await supabase
-        .from("reports")
-        .update({
-          receiver_id: ownerId,
-          vehicle_id: data.id,
-          plate_registered: true,
-          flow_type: "registered_plate",
-          status: "reported",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("licence_plate", normalizedPlate)
-        .is("receiver_id", null);
-    } catch (linkError) {
-      console.error("Auto-link old reports error:", linkError);
-    }
+    await linkOldReportsToOwner({
+      authUserId: ownerAuthId,
+      profileId: ownerProfileId,
+      vehicleId: data.id,
+      licencePlate: normalizedPlate,
+    });
 
     return sendResponse(
       res,
@@ -247,11 +279,11 @@ const claimVehicle = async (req, res) => {
   try {
     const { licencePlate, vehicleId } = req.body;
 
-    // IMPORTANT:
-    // Your vehicles.owner_id is storing auth_user_id, not profile id
-    const userId = req.user?.id || null;
+    const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
 
-    if (!userId) {
+    if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -267,7 +299,7 @@ const claimVehicle = async (req, res) => {
     let query = supabase
       .from("vehicles")
       .update({
-        owner_id: userId,
+        owner_id: ownerAuthId,
         is_claimed: true,
         registration_source: "claimed_after_onboarding",
         updated_at: new Date().toISOString(),
@@ -291,22 +323,12 @@ const claimVehicle = async (req, res) => {
       );
     }
 
-    try {
-      await supabase
-        .from("reports")
-        .update({
-          receiver_id: userId,
-          vehicle_id: data.id,
-          plate_registered: true,
-          flow_type: "registered_plate",
-          status: "reported",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("licence_plate", data.licence_plate)
-        .is("receiver_id", null);
-    } catch (linkError) {
-      console.error("Auto-link claimed vehicle reports error:", linkError);
-    }
+    await linkOldReportsToOwner({
+      authUserId: ownerAuthId,
+      profileId: ownerProfileId,
+      vehicleId: data.id,
+      licencePlate: data.licence_plate,
+    });
 
     return sendResponse(
       res,
@@ -324,18 +346,16 @@ const claimVehicle = async (req, res) => {
 // ================= GET ALL VEHICLES =================
 const getAllVehicles = async (req, res) => {
   try {
-    // IMPORTANT:
-    // Fetch vehicles using auth_user_id because owner_id contains auth_user_id
-    const ownerId = req.user?.id || null;
+    const ownerAuthId = req.user?.id || null;
 
-    if (!ownerId) {
+    if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
     const { data, error } = await supabase
       .from("vehicles")
       .select("*")
-      .eq("owner_id", ownerId)
+      .eq("owner_id", ownerAuthId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -359,11 +379,9 @@ const getAllVehicles = async (req, res) => {
 // ================= GET SINGLE VEHICLE =================
 const getSingleVehicle = async (req, res) => {
   try {
-    // IMPORTANT:
-    // Fetch vehicle using auth_user_id because owner_id contains auth_user_id
-    const ownerId = req.user?.id || null;
+    const ownerAuthId = req.user?.id || null;
 
-    if (!ownerId) {
+    if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -371,7 +389,7 @@ const getSingleVehicle = async (req, res) => {
       .from("vehicles")
       .select("*")
       .eq("id", req.params.id)
-      .eq("owner_id", ownerId)
+      .eq("owner_id", ownerAuthId)
       .maybeSingle();
 
     if (error || !data) {
