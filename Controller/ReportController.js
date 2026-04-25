@@ -5,7 +5,10 @@ const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
 const allowedUrgency = ["urgent", "medium", "not_urgent"];
 const allowedStatuses = ["reported", "seen", "resolved", "pending_registration"];
 
-const normalizePlate = (value = "") => value.trim().toUpperCase();
+// IMPORTANT: remove spaces too
+// "ABC 123" and "ABC123" become same plate
+const normalizePlate = (value = "") =>
+  String(value).replace(/\s+/g, "").trim().toUpperCase();
 
 const createNotification = async ({
   userId,
@@ -58,7 +61,19 @@ const createReport = async (req, res) => {
     const { licencePlate, urgency, description } = req.body;
 
     const reporterAuthId = req.user?.id || null;
-    const reporterProfileId = await getProfileIdFromAuthUserId(reporterAuthId);
+
+    // IMPORTANT:
+    // authMiddleware already gives profileId.
+    // Use it first so reporter_id is not NULL.
+    const reporterProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(reporterAuthId));
+
+    console.log("📝 CREATE REPORT USER:", {
+      reporterAuthId,
+      reporterProfileId,
+      email: req.user?.email,
+      role: req.user?.role,
+    });
 
     if (!licencePlate || !urgency || !description) {
       return sendResponse(
@@ -82,7 +97,7 @@ const createReport = async (req, res) => {
 
     const { data: vehicle, error: vehicleError } = await supabase
       .from("vehicles")
-      .select("id, owner_id, vehicle_name, licence_plate")
+      .select("id, owner_id, vehicle_name, licence_plate, vehicle_media")
       .eq("licence_plate", normalizedPlate)
       .maybeSingle();
 
@@ -101,9 +116,6 @@ const createReport = async (req, res) => {
         if (ownerProfileId) {
           receiverId = ownerProfileId;
           ownerFound = true;
-        } else {
-          receiverId = null;
-          ownerFound = false;
         }
       }
     }
@@ -146,6 +158,8 @@ const createReport = async (req, res) => {
 
       is_anonymous: !reporterProfileId,
     };
+
+    console.log("📦 REPORT PAYLOAD:", payload);
 
     const { data, error } = await supabase
       .from("reports")
@@ -236,14 +250,41 @@ const getSingleReport = async (req, res) => {
       .from("reports")
       .select("*")
       .eq("id", req.params.id)
-      .single();
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       console.error("Supabase get single report error:", error);
       return sendResponse(res, 404, false, "Report not found");
     }
 
-    return sendResponse(res, 200, true, "Report fetched successfully", data);
+    let vehicleImage = "";
+    let vehicleName = null;
+
+    if (data.vehicle_id) {
+      const { data: vehicle, error: vehicleError } = await supabase
+        .from("vehicles")
+        .select("vehicle_name, vehicle_media")
+        .eq("id", data.vehicle_id)
+        .maybeSingle();
+
+      if (!vehicleError && vehicle) {
+        vehicleName = vehicle.vehicle_name || null;
+        vehicleImage =
+          Array.isArray(vehicle.vehicle_media) && vehicle.vehicle_media.length > 0
+            ? vehicle.vehicle_media[0]
+            : "";
+      }
+    }
+
+    return sendResponse(res, 200, true, "Report fetched successfully", {
+      ...data,
+      vehicleName,
+      vehicleImage,
+      image:
+        Array.isArray(data.medias) && data.medias.length > 0
+          ? data.medias[0]
+          : vehicleImage,
+    });
   } catch (error) {
     console.error("Get Single Report Error:", error);
     return sendResponse(res, 500, false, "Failed to fetch report");
@@ -253,7 +294,15 @@ const getSingleReport = async (req, res) => {
 const getSentReports = async (req, res) => {
   try {
     const authUserId = req.user?.id || req.params.userId || req.query.userId;
-    const reporterProfileId = await getProfileIdFromAuthUserId(authUserId);
+
+    const reporterProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
+
+    console.log("📤 GET SENT REPORTS:", {
+      authUserId,
+      reporterProfileId,
+      email: req.user?.email,
+    });
 
     if (!reporterProfileId) {
       return sendResponse(res, 200, true, "Sent reports fetched successfully", []);
@@ -286,7 +335,15 @@ const getSentReports = async (req, res) => {
 const getReceivedReports = async (req, res) => {
   try {
     const authUserId = req.user?.id || req.params.userId || req.query.userId;
-    const receiverProfileId = await getProfileIdFromAuthUserId(authUserId);
+
+    const receiverProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
+
+    console.log("📥 GET RECEIVED REPORTS:", {
+      authUserId,
+      receiverProfileId,
+      email: req.user?.email,
+    });
 
     if (!receiverProfileId) {
       return sendResponse(
@@ -326,8 +383,11 @@ const updateReportStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+
     const authUserId = req.user?.id || req.body.userId || null;
-    const currentProfileId = await getProfileIdFromAuthUserId(authUserId);
+    const currentProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
+
     const currentUserRole = req.user?.role || null;
 
     if (!status) {
@@ -342,7 +402,7 @@ const updateReportStatus = async (req, res) => {
       .from("reports")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
     if (reportError || !report) {
       console.error("Supabase get report for status update error:", reportError);
@@ -354,14 +414,19 @@ const updateReportStatus = async (req, res) => {
       currentProfileId &&
       report.receiver_id === currentProfileId;
 
+    const isReporter =
+      report.reporter_id &&
+      currentProfileId &&
+      report.reporter_id === currentProfileId;
+
     const isAdmin = currentUserRole === "admin";
 
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isReporter && !isAdmin) {
       return sendResponse(
         res,
         403,
         false,
-        "Only owner or admin can update report status"
+        "Only related user or admin can update report status"
       );
     }
 
