@@ -2,7 +2,10 @@ const supabase = require("../Config/supabaseClient");
 const sendResponse = require("../Utils/sendResponse");
 const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
 
-const normalizePlate = (value = "") => value.trim().toUpperCase();
+// IMPORTANT: remove spaces also
+// "ABC 123" and "ABC123" become same plate
+const normalizePlate = (value = "") =>
+  String(value).replace(/\s+/g, "").trim().toUpperCase();
 
 const normalizeVehicle = (vehicle) => ({
   ...vehicle,
@@ -35,11 +38,22 @@ const getProfileIdFromAuthUserId = async (authUserId) => {
   return data?.id || null;
 };
 
-const linkOldReportsToOwner = async ({ authUserId, profileId, vehicleId, licencePlate }) => {
+const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
   try {
-    if (!authUserId || !profileId || !vehicleId || !licencePlate) return;
+    if (!profileId || !vehicleId || !licencePlate) {
+      console.log("❌ Missing data for report linking:", {
+        profileId,
+        vehicleId,
+        licencePlate,
+      });
+      return;
+    }
 
-    const { error } = await supabase
+    const normalizedPlate = normalizePlate(licencePlate);
+
+    console.log("🔗 Linking old reports for plate:", normalizedPlate);
+
+    const { data, error } = await supabase
       .from("reports")
       .update({
         receiver_id: profileId,
@@ -49,18 +63,22 @@ const linkOldReportsToOwner = async ({ authUserId, profileId, vehicleId, licence
         status: "reported",
         updated_at: new Date().toISOString(),
       })
-      .eq("licence_plate", normalizePlate(licencePlate))
-      .is("receiver_id", null);
+      .eq("licence_plate", normalizedPlate)
+      .is("receiver_id", null)
+      .select("*");
 
     if (error) {
-      console.error("Auto-link old reports error:", error);
+      console.error("❌ Auto-link old reports error:", error);
+      return;
     }
+
+    console.log("✅ Old reports linked:", data?.length || 0);
   } catch (error) {
     console.error("linkOldReportsToOwner error:", error);
   }
 };
 
-// ================= CREATE VEHICLE (ONBOARDING - PUBLIC) =================
+// ================= CREATE VEHICLE ONBOARDING PUBLIC =================
 const createVehicleOnboarding = async (req, res) => {
   try {
     const { vehicleName, licencePlate } = req.body;
@@ -160,17 +178,20 @@ const createVehicleOnboarding = async (req, res) => {
   }
 };
 
-// ================= CREATE VEHICLE (AUTH USER) =================
+// ================= CREATE VEHICLE AUTH USER =================
 const createVehicle = async (req, res) => {
   try {
     const { vehicleName, licencePlate } = req.body;
 
     const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const ownerProfileId = await getProfileIdFromAuthUserId(ownerAuthId);
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
+    }
+
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
     }
 
     if (!vehicleName || !licencePlate) {
@@ -246,7 +267,6 @@ const createVehicle = async (req, res) => {
     }
 
     await linkOldReportsToOwner({
-      authUserId: ownerAuthId,
       profileId: ownerProfileId,
       vehicleId: data.id,
       licencePlate: normalizedPlate,
@@ -274,17 +294,20 @@ const createVehicle = async (req, res) => {
   }
 };
 
-// ================= CLAIM VEHICLE WITH AUTH =================
+// ================= CLAIM VEHICLE =================
 const claimVehicle = async (req, res) => {
   try {
     const { licencePlate, vehicleId } = req.body;
 
     const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const ownerProfileId = await getProfileIdFromAuthUserId(ownerAuthId);
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
+    }
+
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
     }
 
     if (!licencePlate && !vehicleId) {
@@ -324,7 +347,6 @@ const claimVehicle = async (req, res) => {
     }
 
     await linkOldReportsToOwner({
-      authUserId: ownerAuthId,
       profileId: ownerProfileId,
       vehicleId: data.id,
       licencePlate: data.licence_plate,
