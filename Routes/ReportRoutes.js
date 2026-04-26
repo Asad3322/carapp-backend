@@ -17,6 +17,7 @@ const {
 
 router.post(
   "/",
+  authMiddleware,
   upload.fields([
     { name: "medias", maxCount: 5 },
     { name: "insuranceCertificate", maxCount: 1 },
