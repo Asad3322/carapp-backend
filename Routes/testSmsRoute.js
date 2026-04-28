@@ -1,35 +1,35 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const sendSmsWithOVH = require('../Utils/sendSmsWithOVH');
+const sendSMS = require("../Utils/sendSMS");
 
-router.post('/test-sms', async (req, res) => {
+router.get("/test-sms", async (req, res) => {
   try {
-    const { phone, message } = req.body;
+    const phone = req.query.phone;
 
     if (!phone) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number is required',
+        message: "Phone is required",
       });
     }
 
-    const result = await sendSmsWithOVH({
+    const result = await sendSMS({
       to: phone,
-      message: message || 'Test SMS from CARAPP',
+      message: "CARAPP SMS Test Successful",
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'SMS sent successfully',
-      data: result,
+      message: "SMS test executed",
+      result,
     });
   } catch (error) {
-    console.error('OVH SMS error full:', error);
+    console.error("❌ SMS test error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error?.message || 'Failed to send SMS',
-      error: error || null,
+      message: "SMS test failed",
+      error: error.message || error,
     });
   }
 });

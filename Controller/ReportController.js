@@ -5,10 +5,119 @@ const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
 const allowedUrgency = ["urgent", "medium", "not_urgent"];
 const allowedStatuses = ["reported", "seen", "resolved", "pending_registration"];
 
-// IMPORTANT: remove spaces too
-// "ABC 123" and "ABC123" become same plate
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
+
+const updateGamification = async (profileId) => {
+  try {
+    if (!profileId) {
+      return {
+        coins: 10,
+        points: 10,
+        reportsCount: 1,
+        streak: 1,
+        badge: "Rookie Reporter",
+        badges: ["Rookie Reporter"],
+        newlyUnlockedBadges: ["Rookie Reporter"],
+        reward: "+10 Coins",
+        isGuestReward: true,
+      };
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("coins, points, reports_count, streak, last_report_date, badges")
+      .eq("id", profileId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Gamification profile fetch error:", error);
+      return null;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    let coins = Number(profile?.coins || 0);
+    let points = Number(profile?.points || 0);
+    let reportsCount = Number(profile?.reports_count || 0);
+    let streak = Number(profile?.streak || 0);
+    let badges = Array.isArray(profile?.badges) ? profile.badges : [];
+    const lastReportDate = profile?.last_report_date || null;
+
+    coins += 10;
+    points += 10;
+    reportsCount += 1;
+
+    if (!lastReportDate) {
+      streak = 1;
+    } else {
+      const todayDate = new Date(today);
+      const lastDate = new Date(lastReportDate);
+      const diffDays = Math.floor(
+        (todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (diffDays === 0) {
+        streak = streak || 1;
+      } else if (diffDays === 1) {
+        streak += 1;
+      } else if (diffDays > 1) {
+        streak = 1;
+      }
+    }
+
+    const newlyUnlockedBadges = [];
+
+    const unlockBadge = (badgeName, bonusCoins = 0) => {
+      if (!badges.includes(badgeName)) {
+        badges.push(badgeName);
+        newlyUnlockedBadges.push(badgeName);
+        coins += bonusCoins;
+      }
+    };
+
+    if (reportsCount >= 1) unlockBadge("Rookie Reporter", 20);
+    if (reportsCount >= 5) unlockBadge("Street Helper", 50);
+    if (reportsCount >= 10) unlockBadge("Active Reporter", 100);
+    if (points >= 100) unlockBadge("100 Points Club", 50);
+    if (streak >= 5) unlockBadge("Streak Master", 75);
+
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        coins,
+        points,
+        reports_count: reportsCount,
+        streak,
+        badges,
+        last_report_date: today,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", profileId);
+
+    if (updateError) {
+      console.error("Gamification update error:", updateError);
+      return null;
+    }
+
+    return {
+      coins,
+      points,
+      reportsCount,
+      streak,
+      badge: newlyUnlockedBadges[0] || badges[badges.length - 1] || null,
+      badges,
+      newlyUnlockedBadges,
+      reward: newlyUnlockedBadges.length
+        ? "+10 Coins + Badge Bonus"
+        : "+10 Coins",
+      isGuestReward: false,
+    };
+  } catch (error) {
+    console.error("Gamification error:", error);
+    return null;
+  }
+};
 
 const createNotification = async ({
   userId,
@@ -62,9 +171,6 @@ const createReport = async (req, res) => {
 
     const reporterAuthId = req.user?.id || null;
 
-    // IMPORTANT:
-    // authMiddleware already gives profileId.
-    // Use it first so reporter_id is not NULL.
     const reporterProfileId =
       req.user?.profileId || (await getProfileIdFromAuthUserId(reporterAuthId));
 
@@ -172,6 +278,8 @@ const createReport = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
+    const gamification = await updateGamification(reporterProfileId);
+
     if (ownerFound && receiverId) {
       await createNotification({
         userId: receiverId,
@@ -213,6 +321,7 @@ const createReport = async (req, res) => {
       insuranceUrls,
       vehicleName,
       ownerFound,
+      gamification,
     });
   } catch (error) {
     console.error("Create Report Error:", error);
@@ -270,7 +379,8 @@ const getSingleReport = async (req, res) => {
       if (!vehicleError && vehicle) {
         vehicleName = vehicle.vehicle_name || null;
         vehicleImage =
-          Array.isArray(vehicle.vehicle_media) && vehicle.vehicle_media.length > 0
+          Array.isArray(vehicle.vehicle_media) &&
+          vehicle.vehicle_media.length > 0
             ? vehicle.vehicle_media[0]
             : "";
       }
