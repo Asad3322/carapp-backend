@@ -15,9 +15,9 @@ const {
   updateReportStatus,
 } = require("../Controller/ReportController");
 
+// PUBLIC ROUTE - no login/token required
 router.post(
   "/",
-  authMiddleware,
   upload.fields([
     { name: "medias", maxCount: 5 },
     { name: "insuranceCertificate", maxCount: 1 },
@@ -26,6 +26,7 @@ router.post(
   createReport
 );
 
+// PROTECTED ROUTES
 router.get("/", authMiddleware, getAllReports);
 router.get("/sent", authMiddleware, getSentReports);
 router.get("/received", authMiddleware, getReceivedReports);
