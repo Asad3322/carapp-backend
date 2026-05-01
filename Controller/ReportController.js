@@ -8,6 +8,40 @@ const allowedStatuses = ["reported", "seen", "resolved", "pending_registration"]
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
 
+const normalizeMediaArray = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed) return [];
+
+    if (trimmed.startsWith("http")) {
+      return [trimmed];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean);
+      }
+
+      if (typeof parsed === "string" && parsed.trim()) {
+        return [parsed.trim()];
+      }
+    } catch (err) {
+      console.error("Media parse error:", err);
+    }
+  }
+
+  return [];
+};
+
 const updateGamification = async (profileId) => {
   try {
     if (!profileId) {
@@ -232,7 +266,7 @@ const createReport = async (req, res) => {
     if (req.files?.medias?.length) {
       for (const file of req.files.medias) {
         const url = await uploadFileToSupabase(file, "reports", "report-media");
-        mediaUrls.push(url);
+        if (url) mediaUrls.push(url);
       }
     }
 
@@ -243,7 +277,7 @@ const createReport = async (req, res) => {
           "reports",
           "insurance-documents"
         );
-        insuranceUrls.push(url);
+        if (url) insuranceUrls.push(url);
       }
     }
 
@@ -378,22 +412,21 @@ const getSingleReport = async (req, res) => {
 
       if (!vehicleError && vehicle) {
         vehicleName = vehicle.vehicle_name || null;
-        vehicleImage =
-          Array.isArray(vehicle.vehicle_media) &&
-          vehicle.vehicle_media.length > 0
-            ? vehicle.vehicle_media[0]
-            : "";
+
+        const vehicleMediaArray = normalizeMediaArray(vehicle.vehicle_media);
+        vehicleImage = vehicleMediaArray[0] || "";
       }
     }
+
+    const mediaArray = normalizeMediaArray(data.medias);
+    const reportImage = mediaArray[0] || vehicleImage || "";
 
     return sendResponse(res, 200, true, "Report fetched successfully", {
       ...data,
       vehicleName,
       vehicleImage,
-      image:
-        Array.isArray(data.medias) && data.medias.length > 0
-          ? data.medias[0]
-          : vehicleImage,
+      medias: mediaArray,
+      image: reportImage,
     });
   } catch (error) {
     console.error("Get Single Report Error:", error);
