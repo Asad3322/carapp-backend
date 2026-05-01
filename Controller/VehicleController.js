@@ -2,7 +2,6 @@ const supabase = require("../Config/supabaseClient");
 const sendResponse = require("../Utils/sendResponse");
 const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
 
-// IMPORTANT: remove spaces also
 // "ABC 123" and "ABC123" become same plate
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
@@ -36,6 +35,37 @@ const getProfileIdFromAuthUserId = async (authUserId) => {
   }
 
   return data?.id || null;
+};
+
+const uploadVehicleFiles = async (files) => {
+  const vehicleMediaUrls = [];
+  const insuranceUrls = [];
+
+  if (files?.vehicleMedia?.length) {
+    for (const file of files.vehicleMedia) {
+      const url = await uploadFileToSupabase(
+        file,
+        "vehicles",
+        "vehicle-media"
+      );
+
+      if (url) vehicleMediaUrls.push(url);
+    }
+  }
+
+  if (files?.insuranceDocument?.length) {
+    for (const file of files.insuranceDocument) {
+      const url = await uploadFileToSupabase(
+        file,
+        "vehicles",
+        "insurance-documents"
+      );
+
+      if (url) insuranceUrls.push(url);
+    }
+  }
+
+  return { vehicleMediaUrls, insuranceUrls };
 };
 
 const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
@@ -109,30 +139,9 @@ const createVehicleOnboarding = async (req, res) => {
       return sendResponse(res, 409, false, "Licence Plate already exists");
     }
 
-    const vehicleMediaUrls = [];
-    const insuranceUrls = [];
-
-    if (req.files?.vehicleMedia?.length) {
-      for (const file of req.files.vehicleMedia) {
-        const url = await uploadFileToSupabase(
-          file,
-          "vehicle-media",
-          "vehicles"
-        );
-        vehicleMediaUrls.push(url);
-      }
-    }
-
-    if (req.files?.insuranceDocument?.length) {
-      for (const file of req.files.insuranceDocument) {
-        const url = await uploadFileToSupabase(
-          file,
-          "insurance-documents",
-          "vehicles"
-        );
-        insuranceUrls.push(url);
-      }
-    }
+    const { vehicleMediaUrls, insuranceUrls } = await uploadVehicleFiles(
+      req.files
+    );
 
     const payload = {
       vehicle_name: vehicleName.trim(),
@@ -143,6 +152,8 @@ const createVehicleOnboarding = async (req, res) => {
       is_claimed: false,
       registration_source: "onboarding",
     };
+
+    console.log("📦 CREATE ONBOARDING VEHICLE PAYLOAD:", payload);
 
     const { data, error } = await supabase
       .from("vehicles")
@@ -184,7 +195,15 @@ const createVehicle = async (req, res) => {
     const { vehicleName, licencePlate } = req.body;
 
     const ownerAuthId = req.user?.id || null;
-    const ownerProfileId = await getProfileIdFromAuthUserId(ownerAuthId);
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+
+    console.log("🚗 CREATE VEHICLE USER:", {
+      ownerAuthId,
+      ownerProfileId,
+      email: req.user?.email,
+      role: req.user?.role,
+    });
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
@@ -220,30 +239,9 @@ const createVehicle = async (req, res) => {
       return sendResponse(res, 409, false, "Licence Plate already exists");
     }
 
-    const vehicleMediaUrls = [];
-    const insuranceUrls = [];
-
-    if (req.files?.vehicleMedia?.length) {
-      for (const file of req.files.vehicleMedia) {
-        const url = await uploadFileToSupabase(
-          file,
-          "vehicle-media",
-          "vehicles"
-        );
-        vehicleMediaUrls.push(url);
-      }
-    }
-
-    if (req.files?.insuranceDocument?.length) {
-      for (const file of req.files.insuranceDocument) {
-        const url = await uploadFileToSupabase(
-          file,
-          "insurance-documents",
-          "vehicles"
-        );
-        insuranceUrls.push(url);
-      }
-    }
+    const { vehicleMediaUrls, insuranceUrls } = await uploadVehicleFiles(
+      req.files
+    );
 
     const payload = {
       vehicle_name: vehicleName.trim(),
@@ -254,6 +252,8 @@ const createVehicle = async (req, res) => {
       is_claimed: true,
       registration_source: "registered_user",
     };
+
+    console.log("📦 CREATE VEHICLE PAYLOAD:", payload);
 
     const { data, error } = await supabase
       .from("vehicles")
@@ -300,7 +300,8 @@ const claimVehicle = async (req, res) => {
     const { licencePlate, vehicleId } = req.body;
 
     const ownerAuthId = req.user?.id || null;
-    const ownerProfileId = await getProfileIdFromAuthUserId(ownerAuthId);
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
@@ -373,6 +374,8 @@ const getAllVehicles = async (req, res) => {
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
+
+    console.log("🚗 GET VEHICLES OWNER AUTH ID:", ownerAuthId);
 
     const { data, error } = await supabase
       .from("vehicles")
