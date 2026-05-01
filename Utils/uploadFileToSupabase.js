@@ -4,8 +4,8 @@ const supabase = require("../Config/supabaseClient");
 
 const uploadFileToSupabase = async (
   file,
-  folder = "uploads",
-  bucket = "reports"
+  bucket = "reports",     // ✅ bucket FIRST
+  folder = "uploads"      // ✅ folder SECOND
 ) => {
   try {
     if (!file) {
@@ -13,6 +13,7 @@ const uploadFileToSupabase = async (
     }
 
     const ext = path.extname(file.originalname);
+
     const fileName = `${folder}/${Date.now()}-${crypto.randomUUID()}${ext}`;
 
     const { error } = await supabase.storage
