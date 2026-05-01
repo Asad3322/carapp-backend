@@ -116,8 +116,8 @@ const createVehicleOnboarding = async (req, res) => {
       for (const file of req.files.vehicleMedia) {
         const url = await uploadFileToSupabase(
           file,
-          "vehicles",
-          "vehicle-media"
+          "vehicle-media",
+          "vehicles"
         );
         vehicleMediaUrls.push(url);
       }
@@ -127,8 +127,8 @@ const createVehicleOnboarding = async (req, res) => {
       for (const file of req.files.insuranceDocument) {
         const url = await uploadFileToSupabase(
           file,
-          "vehicles",
-          "insurance-documents"
+          "insurance-documents",
+          "vehicles"
         );
         insuranceUrls.push(url);
       }
@@ -227,8 +227,8 @@ const createVehicle = async (req, res) => {
       for (const file of req.files.vehicleMedia) {
         const url = await uploadFileToSupabase(
           file,
-          "vehicles",
-          "vehicle-media"
+          "vehicle-media",
+          "vehicles"
         );
         vehicleMediaUrls.push(url);
       }
@@ -238,8 +238,8 @@ const createVehicle = async (req, res) => {
       for (const file of req.files.insuranceDocument) {
         const url = await uploadFileToSupabase(
           file,
-          "vehicles",
-          "insurance-documents"
+          "insurance-documents",
+          "vehicles"
         );
         insuranceUrls.push(url);
       }
