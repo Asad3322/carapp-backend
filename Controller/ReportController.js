@@ -265,7 +265,7 @@ const createReport = async (req, res) => {
 
     if (req.files?.medias?.length) {
       for (const file of req.files.medias) {
-        const url = await uploadFileToSupabase(file, "reports", "report-media");
+        const url = await uploadFileToSupabase(file, "report-media", "reports");
         if (url) mediaUrls.push(url);
       }
     }
