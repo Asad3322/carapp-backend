@@ -4,6 +4,7 @@ const router = express.Router();
 const upload = require("../Utils/multer");
 const validate = require("../Middleware/validate");
 const authMiddleware = require("../Middleware/authMiddleware");
+const optionalAuthMiddleware = require("../Middleware/optionalAuthMiddleware");
 const { createReportSchema } = require("../Validations/reportValidation");
 
 const {
@@ -15,9 +16,10 @@ const {
   updateReportStatus,
 } = require("../Controller/ReportController");
 
-// PUBLIC ROUTE - no login/token required
+// PUBLIC + OPTIONAL AUTH ROUTE
 router.post(
   "/",
+  optionalAuthMiddleware,
   upload.fields([
     { name: "medias", maxCount: 5 },
     { name: "insuranceCertificate", maxCount: 1 },
