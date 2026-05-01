@@ -45,8 +45,8 @@ const uploadVehicleFiles = async (files) => {
     for (const file of files.vehicleMedia) {
       const url = await uploadFileToSupabase(
         file,
-        "vehicles",
-        "vehicle-media"
+        "vehicle-media",
+        "vehicles"
       );
 
       if (url) vehicleMediaUrls.push(url);
@@ -57,8 +57,8 @@ const uploadVehicleFiles = async (files) => {
     for (const file of files.insuranceDocument) {
       const url = await uploadFileToSupabase(
         file,
-        "vehicles",
-        "insurance-documents"
+        "insurance-documents",
+        "vehicles"
       );
 
       if (url) insuranceUrls.push(url);
