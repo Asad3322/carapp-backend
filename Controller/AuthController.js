@@ -3,8 +3,14 @@ const {
   getUserByContactService,
   verifyPhoneMagicLinkService,
 } = require("../Service/AuthService");
+
 const sendResponse = require("../Utils/sendResponse");
 const supabase = require("../Config/supabaseClient");
+
+const FRONTEND_URL =
+  process.env.CLIENT_URL && process.env.CLIENT_URL !== "http://localhost:5173"
+    ? process.env.CLIENT_URL
+    : "https://car-app-french.vercel.app";
 
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
@@ -21,17 +27,19 @@ const sendVerification = async (req, res) => {
       return sendResponse(res, 400, false, "Contact is required");
     }
 
+    const finalRole = role === "vehicle_owner" ? "vehicle_owner" : "reporter";
+
     const result = await sendVerificationService({
-      contact,
-      role: role || "reporter",
+      contact: contact.trim(),
+      role: finalRole,
       vehicleId: vehicleId || null,
     });
 
     let verificationLink = null;
 
     if (result?.phone_token) {
-      verificationLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${result.phone_token}`;
-      console.log("🔗 MOCK PHONE VERIFICATION LINK:", verificationLink);
+      verificationLink = `${FRONTEND_URL}/auth/callback?phone_token=${result.phone_token}`;
+      console.log("🔗 PHONE VERIFICATION LINK:", verificationLink);
     }
 
     return sendResponse(
@@ -47,8 +55,7 @@ const sendVerification = async (req, res) => {
       }
     );
   } catch (error) {
-    console.error("❌ sendVerification error:", error.message);
-
+    console.error("❌ sendVerification error:", error);
     return sendResponse(
       res,
       500,
@@ -63,11 +70,15 @@ const verifyPhoneMagicLink = async (req, res) => {
   try {
     const { phone_token } = req.query;
 
+    if (!phone_token) {
+      return sendResponse(res, 400, false, "Phone token is required");
+    }
+
     const verification = await verifyPhoneMagicLinkService(phone_token);
 
     return sendResponse(res, 200, true, "Phone verified successfully", {
       phone: verification.phone,
-      role: verification.role,
+      role: verification.role || "vehicle_owner",
       vehicleId: verification.vehicle_id,
     });
   } catch (error) {
@@ -99,7 +110,7 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
       .is("receiver_id", null);
 
     if (error) {
-      console.error("Auto-link reports after profile create error:", error);
+      console.error("Auto-link reports error:", error);
     }
   } catch (error) {
     console.error("linkOldReportsToOwner error:", error);
@@ -108,6 +119,24 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
 
 const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
   if (!authUserId || !profileId || !vehicleId) return null;
+
+  const { data: vehicle, error: findError } = await supabase
+    .from("vehicles")
+    .select("*")
+    .eq("id", vehicleId)
+    .maybeSingle();
+
+  if (findError) {
+    throw new Error(findError.message);
+  }
+
+  if (!vehicle) {
+    throw new Error("Vehicle not found");
+  }
+
+  if (vehicle.owner_id && vehicle.owner_id !== authUserId) {
+    throw new Error("This vehicle is already claimed by another owner");
+  }
 
   const { data: claimedVehicle, error: claimError } = await supabase
     .from("vehicles")
@@ -121,16 +150,11 @@ const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
     .select("*")
     .maybeSingle();
 
-  console.log("🚗 CLAIM VEHICLE RESULT:", {
-    vehicleId,
-    authUserId,
-    claimedVehicle,
-    claimError,
-  });
-
   if (claimError) {
     throw new Error(claimError.message || "Failed to claim vehicle");
   }
+
+  console.log("✅ VEHICLE CLAIMED:", claimedVehicle);
 
   if (claimedVehicle) {
     await linkOldReportsToOwner({
@@ -148,107 +172,123 @@ const createProfileAfterAuth = async (req, res) => {
   try {
     const authUser = req.user;
 
+    if (!authUser?.id) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
+
     const {
       role,
       verifiedPhone,
       vehicleId,
-      username: bodyUsername,
-      name: bodyName,
+      username,
+      name,
+      email: bodyEmail,
+      phone: bodyPhone,
       profileImage,
       avatar_url,
     } = req.body;
 
-    if (!authUser) {
-      return sendResponse(res, 401, false, "Unauthorized");
-    }
-
     const finalRole = role === "vehicle_owner" ? "vehicle_owner" : "reporter";
-    const email = authUser.email || req.body.email || null;
-    const phone = verifiedPhone || req.body.phone || authUser.phone || null;
+    const finalEmail = authUser.email || bodyEmail || null;
+    const finalPhone = verifiedPhone || bodyPhone || authUser.phone || null;
 
-    const existingProfile = await getUserByContactService({ email, phone });
+    const { data: existingProfile, error: profileFindError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("auth_user_id", authUser.id)
+      .maybeSingle();
+
+    if (profileFindError) {
+      return sendResponse(res, 500, false, profileFindError.message);
+    }
 
     // ================= EXISTING PROFILE =================
     if (existingProfile) {
-      let updatedProfile = existingProfile;
+      const updatePayload = {
+        role: finalRole,
+        email: finalEmail || existingProfile.email,
+        phone: finalPhone || existingProfile.phone,
+        primary_contact: finalRole === "vehicle_owner" ? "SMS" : "Email",
+        updated_at: new Date().toISOString(),
+      };
 
-      if (finalRole === "vehicle_owner") {
-        const { data: profileUpdate, error: profileUpdateError } = await supabase
-          .from("profiles")
-          .update({
-            role: "vehicle_owner",
-            phone: phone || existingProfile.phone,
-            primary_contact: "SMS",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingProfile.id)
-          .select("*")
-          .maybeSingle();
-
-        if (profileUpdateError) {
-          return sendResponse(res, 500, false, profileUpdateError.message);
-        }
-
-        updatedProfile = profileUpdate || existingProfile;
-
-        if (vehicleId) {
-          await claimVehicleForOwner({
-            authUserId: authUser.id,
-            profileId: existingProfile.id,
-            vehicleId,
-          });
-        }
+      if (username) updatePayload.username = username;
+      if (name) updatePayload.name = name;
+      if (avatar_url || profileImage) {
+        updatePayload.avatar_url = avatar_url || profileImage;
       }
 
-      return sendResponse(
-        res,
-        200,
-        true,
-        "Profile already exists",
-        updatedProfile
-      );
+      const { data: updatedProfile, error: updateError } = await supabase
+        .from("profiles")
+        .update(updatePayload)
+        .eq("id", existingProfile.id)
+        .select("*")
+        .maybeSingle();
+
+      if (updateError) {
+        return sendResponse(res, 500, false, updateError.message);
+      }
+
+      let claimedVehicle = null;
+
+      if (finalRole === "vehicle_owner" && vehicleId) {
+        claimedVehicle = await claimVehicleForOwner({
+          authUserId: authUser.id,
+          profileId: existingProfile.id,
+          vehicleId,
+        });
+      }
+
+      return sendResponse(res, 200, true, "Profile updated successfully", {
+        profile: updatedProfile,
+        vehicle: claimedVehicle,
+      });
     }
 
     // ================= CREATE NEW PROFILE =================
-    const requestedUsername =
-      bodyUsername ||
-      bodyName ||
+    const finalUsername =
+      username ||
+      name ||
       authUser.user_metadata?.name ||
       `user_${Math.random().toString(36).slice(2, 8)}`;
 
-    const requestedName = bodyName || requestedUsername;
-
-    const { data, error } = await supabase
+    const { data: createdProfile, error: createError } = await supabase
       .from("profiles")
       .insert([
         {
           auth_user_id: authUser.id,
-          name: requestedName,
-          email,
-          phone,
+          name: name || finalUsername,
+          username: finalUsername,
+          email: finalEmail,
+          phone: finalPhone,
           role: finalRole,
-          username: requestedUsername,
           avatar_url: avatar_url || profileImage || null,
           language: "French",
           primary_contact: finalRole === "vehicle_owner" ? "SMS" : "Email",
+          updated_at: new Date().toISOString(),
         },
       ])
       .select("*")
       .single();
 
-    if (error) {
-      return sendResponse(res, 500, false, error.message);
+    if (createError) {
+      return sendResponse(res, 500, false, createError.message);
     }
 
+    let claimedVehicle = null;
+
     if (finalRole === "vehicle_owner" && vehicleId) {
-      await claimVehicleForOwner({
+      claimedVehicle = await claimVehicleForOwner({
         authUserId: authUser.id,
-        profileId: data.id,
+        profileId: createdProfile.id,
         vehicleId,
       });
     }
 
-    return sendResponse(res, 201, true, "Profile created successfully", data);
+    return sendResponse(res, 201, true, "Profile created successfully", {
+      profile: createdProfile,
+      vehicle: claimedVehicle,
+    });
   } catch (error) {
     console.error("createProfileAfterAuth error:", error);
     return sendResponse(
