@@ -43,12 +43,7 @@ const uploadVehicleFiles = async (files) => {
 
   if (files?.vehicleMedia?.length) {
     for (const file of files.vehicleMedia) {
-      const url = await uploadFileToSupabase(
-        file,
-        "vehicle-media",
-        "vehicles"
-      );
-
+      const url = await uploadFileToSupabase(file, "vehicle-media", "vehicles");
       if (url) vehicleMediaUrls.push(url);
     }
   }
@@ -60,7 +55,6 @@ const uploadVehicleFiles = async (files) => {
         "insurance-documents",
         "vehicles"
       );
-
       if (url) insuranceUrls.push(url);
     }
   }
@@ -151,6 +145,7 @@ const createVehicleOnboarding = async (req, res) => {
       owner_id: null,
       is_claimed: false,
       registration_source: "onboarding",
+      updated_at: new Date().toISOString(),
     };
 
     console.log("📦 CREATE ONBOARDING VEHICLE PAYLOAD:", payload);
@@ -251,6 +246,7 @@ const createVehicle = async (req, res) => {
       owner_id: ownerAuthId,
       is_claimed: true,
       registration_source: "registered_user",
+      updated_at: new Date().toISOString(),
     };
 
     console.log("📦 CREATE VEHICLE PAYLOAD:", payload);
@@ -320,7 +316,35 @@ const claimVehicle = async (req, res) => {
       );
     }
 
-    let query = supabase
+    let findQuery = supabase.from("vehicles").select("*");
+
+    if (vehicleId) {
+      findQuery = findQuery.eq("id", vehicleId);
+    } else {
+      findQuery = findQuery.eq("licence_plate", normalizePlate(licencePlate));
+    }
+
+    const { data: vehicle, error: findError } = await findQuery.maybeSingle();
+
+    if (findError) {
+      console.error("Find vehicle before claim error:", findError);
+      return sendResponse(res, 500, false, findError.message);
+    }
+
+    if (!vehicle) {
+      return sendResponse(res, 404, false, "Vehicle not found");
+    }
+
+    if (vehicle.owner_id && vehicle.owner_id !== ownerAuthId) {
+      return sendResponse(
+        res,
+        409,
+        false,
+        "This vehicle is already claimed by another owner"
+      );
+    }
+
+    const { data, error } = await supabase
       .from("vehicles")
       .update({
         owner_id: ownerAuthId,
@@ -328,15 +352,9 @@ const claimVehicle = async (req, res) => {
         registration_source: "claimed_after_onboarding",
         updated_at: new Date().toISOString(),
       })
-      .select("*");
-
-    if (vehicleId) {
-      query = query.eq("id", vehicleId);
-    } else {
-      query = query.eq("licence_plate", normalizePlate(licencePlate));
-    }
-
-    const { data, error } = await query.maybeSingle();
+      .eq("id", vehicle.id)
+      .select("*")
+      .maybeSingle();
 
     if (error || !data) {
       return sendResponse(
@@ -362,7 +380,12 @@ const claimVehicle = async (req, res) => {
     );
   } catch (error) {
     console.error("Claim Vehicle Error:", error);
-    return sendResponse(res, 500, false, "Failed to claim vehicle");
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Failed to claim vehicle"
+    );
   }
 };
 

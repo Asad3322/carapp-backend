@@ -6,6 +6,9 @@ const {
 const sendResponse = require("../Utils/sendResponse");
 const supabase = require("../Config/supabaseClient");
 
+const normalizePlate = (value = "") =>
+  String(value).replace(/\s+/g, "").trim().toUpperCase();
+
 // ================= SEND VERIFICATION =================
 const sendVerification = async (req, res) => {
   try {
@@ -92,7 +95,7 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
         status: "reported",
         updated_at: new Date().toISOString(),
       })
-      .eq("licence_plate", licencePlate)
+      .eq("licence_plate", normalizePlate(licencePlate))
       .is("receiver_id", null);
 
     if (error) {
@@ -101,6 +104,43 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
   } catch (error) {
     console.error("linkOldReportsToOwner error:", error);
   }
+};
+
+const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
+  if (!authUserId || !profileId || !vehicleId) return null;
+
+  const { data: claimedVehicle, error: claimError } = await supabase
+    .from("vehicles")
+    .update({
+      owner_id: authUserId,
+      is_claimed: true,
+      registration_source: "claimed_after_onboarding",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", vehicleId)
+    .select("*")
+    .maybeSingle();
+
+  console.log("🚗 CLAIM VEHICLE RESULT:", {
+    vehicleId,
+    authUserId,
+    claimedVehicle,
+    claimError,
+  });
+
+  if (claimError) {
+    throw new Error(claimError.message || "Failed to claim vehicle");
+  }
+
+  if (claimedVehicle) {
+    await linkOldReportsToOwner({
+      profileId,
+      vehicleId: claimedVehicle.id,
+      licencePlate: claimedVehicle.licence_plate,
+    });
+  }
+
+  return claimedVehicle;
 };
 
 // ================= CREATE PROFILE AFTER AUTH =================
@@ -122,6 +162,7 @@ const createProfileAfterAuth = async (req, res) => {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
+    const finalRole = role === "vehicle_owner" ? "vehicle_owner" : "reporter";
     const email = authUser.email || req.body.email || null;
     const phone = verifiedPhone || req.body.phone || authUser.phone || null;
 
@@ -129,31 +170,32 @@ const createProfileAfterAuth = async (req, res) => {
 
     // ================= EXISTING PROFILE =================
     if (existingProfile) {
-      if (role === "vehicle_owner" && vehicleId) {
-        const { data: claimedVehicle, error: claimError } = await supabase
-          .from("vehicles")
+      let updatedProfile = existingProfile;
+
+      if (finalRole === "vehicle_owner") {
+        const { data: profileUpdate, error: profileUpdateError } = await supabase
+          .from("profiles")
           .update({
-            owner_id: authUser.id,
-            is_claimed: true,
-            registration_source: "claimed_after_onboarding",
+            role: "vehicle_owner",
+            phone: phone || existingProfile.phone,
+            primary_contact: "SMS",
             updated_at: new Date().toISOString(),
           })
-          .eq("id", vehicleId)
+          .eq("id", existingProfile.id)
           .select("*")
           .maybeSingle();
 
-        console.log("🚗 CLAIM RESULT (existingProfile):", {
-          vehicleId,
-          userId: authUser.id,
-          claimedVehicle,
-          claimError,
-        });
+        if (profileUpdateError) {
+          return sendResponse(res, 500, false, profileUpdateError.message);
+        }
 
-        if (claimedVehicle) {
-          await linkOldReportsToOwner({
+        updatedProfile = profileUpdate || existingProfile;
+
+        if (vehicleId) {
+          await claimVehicleForOwner({
+            authUserId: authUser.id,
             profileId: existingProfile.id,
-            vehicleId: claimedVehicle.id,
-            licencePlate: claimedVehicle.licence_plate,
+            vehicleId,
           });
         }
       }
@@ -163,7 +205,7 @@ const createProfileAfterAuth = async (req, res) => {
         200,
         true,
         "Profile already exists",
-        existingProfile
+        updatedProfile
       );
     }
 
@@ -184,48 +226,26 @@ const createProfileAfterAuth = async (req, res) => {
           name: requestedName,
           email,
           phone,
-          role: role || "reporter",
+          role: finalRole,
           username: requestedUsername,
           avatar_url: avatar_url || profileImage || null,
           language: "French",
-          primary_contact: role === "vehicle_owner" ? "SMS" : "Email",
+          primary_contact: finalRole === "vehicle_owner" ? "SMS" : "Email",
         },
       ])
-      .select()
+      .select("*")
       .single();
 
     if (error) {
       return sendResponse(res, 500, false, error.message);
     }
 
-    // ================= CLAIM VEHICLE AFTER PROFILE CREATE =================
-    if (role === "vehicle_owner" && vehicleId) {
-      const { data: linkedVehicle, error: claimError } = await supabase
-        .from("vehicles")
-        .update({
-          owner_id: authUser.id,
-          is_claimed: true,
-          registration_source: "claimed_after_onboarding",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", vehicleId)
-        .select("*")
-        .maybeSingle();
-
-      console.log("🚗 CLAIM RESULT (newProfile):", {
+    if (finalRole === "vehicle_owner" && vehicleId) {
+      await claimVehicleForOwner({
+        authUserId: authUser.id,
+        profileId: data.id,
         vehicleId,
-        userId: authUser.id,
-        linkedVehicle,
-        claimError,
       });
-
-      if (linkedVehicle) {
-        await linkOldReportsToOwner({
-          profileId: data.id,
-          vehicleId: linkedVehicle.id,
-          licencePlate: linkedVehicle.licence_plate,
-        });
-      }
     }
 
     return sendResponse(res, 201, true, "Profile created successfully", data);
