@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
+// Routes
 const authRouter = require("./Routes/AuthRoutes");
 const userRouter = require("./Routes/UserRoutes");
 const reportRouter = require("./Routes/ReportRoutes");
@@ -14,6 +15,7 @@ const gamificationRouter = require("./Routes/gamificationRoutes");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ================= DEBUG LOGS =================
 console.log("SUPABASE URL:", process.env.SUPABASE_URL || "Missing");
 console.log(
   "SERVICE KEY:",
@@ -39,6 +41,7 @@ console.log(
 );
 console.log("SMPP SOURCE ADDR:", process.env.SMPP_SOURCE_ADDR || "Missing");
 
+// ================= CORS =================
 const allowedOrigins = [
   "http://localhost:5173",
   "https://car-app-french.vercel.app",
@@ -60,26 +63,29 @@ app.use(
   })
 );
 
+// ================= BODY PARSER =================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ================= ROOT =================
 app.get("/", (req, res) => {
   res.send("🚀 CARAPP Backend Running...");
 });
 
-// Existing routes
+// ================= ROUTES =================
 app.use("/api/auth", authRouter);
 app.use("/users", userRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/vehicles", vehicleRouter);
 app.use("/api/ai", aiRouter);
 
-// Gamification route
+// Gamification
 app.use("/api/gamification", gamificationRouter);
 
-// Temporary SMS test route
-app.use("/api", testSmsRouter);
+// ✅ FIXED SMS ROUTE
+app.use("/api/test-sms", testSmsRouter);
 
+// ================= 404 =================
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -88,6 +94,7 @@ app.use((req, res) => {
   });
 });
 
+// ================= ERROR HANDLER =================
 app.use((err, req, res, next) => {
   console.error("🔥 Server Error:", err);
 
@@ -105,6 +112,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ================= SERVER START =================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 });

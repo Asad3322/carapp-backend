@@ -8,40 +8,32 @@ const client = ovh({
 });
 
 const sendSMS = async ({ to, message }) => {
-  if (!to) {
-    throw new Error("Phone number is required");
-  }
+  if (!to) throw new Error("Phone required");
+  if (!message) throw new Error("Message required");
 
-  if (!message) {
-    throw new Error("SMS message is required");
-  }
+  const serviceName = process.env.OVH_SMS_SERVICE_NAME;
 
-  if (
-    !process.env.OVH_APP_KEY ||
-    !process.env.OVH_APP_SECRET ||
-    !process.env.OVH_CONSUMER_KEY ||
-    !process.env.OVH_SMS_SERVICE_NAME
-  ) {
-    throw new Error("OVH SMS configuration is missing");
-  }
+  return new Promise((resolve, reject) => {
+    client.request(
+      "POST",
+      `/sms/${serviceName}/jobs`,
+      {
+        message,
+        receivers: [to],
+        sender: process.env.OVH_SMS_SENDER,
+        senderForResponse: true,
+      },
+      (error, result) => {
+        if (error) {
+          console.error("❌ OVH Error:", error);
+          return reject(error);
+        }
 
-  const response = await client.requestPromised(
-    "POST",
-    `/sms/${process.env.OVH_SMS_SERVICE_NAME}/jobs`,
-    {
-      receivers: [to],
-      message,
-      sender: process.env.OVH_SMS_SENDER || undefined,
-      noStopClause: true,
-    }
-  );
-
-  return {
-    success: true,
-    mode: "ovh-http-api",
-    to,
-    response,
-  };
+        console.log("✅ SMS Sent:", result);
+        resolve(result);
+      }
+    );
+  });
 };
 
 module.exports = sendSMS;
