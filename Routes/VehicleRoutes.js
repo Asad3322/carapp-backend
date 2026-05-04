@@ -10,10 +10,10 @@ const {
   claimVehicle,
   getAllVehicles,
   getSingleVehicle,
+  updateVehicle,
+  deleteVehicle,
 } = require("../Controller/VehicleController");
 
-// ================= PUBLIC ROUTE (PRD FLOW) =================
-// NO LOGIN REQUIRED
 router.post(
   "/onboarding",
   upload.fields([
@@ -23,7 +23,6 @@ router.post(
   createVehicleOnboarding
 );
 
-// ================= AUTH ROUTE =================
 router.post(
   "/",
   authMiddleware,
@@ -34,11 +33,21 @@ router.post(
   createVehicle
 );
 
-// ================= CLAIM WITH AUTH =================
 router.post("/claim", authMiddleware, claimVehicle);
 
-// ================= GET WITH AUTH =================
 router.get("/", authMiddleware, getAllVehicles);
 router.get("/:id", authMiddleware, getSingleVehicle);
+
+router.patch(
+  "/:id",
+  authMiddleware,
+  upload.fields([
+    { name: "vehicleMedia", maxCount: 5 },
+    { name: "insuranceDocument", maxCount: 2 },
+  ]),
+  updateVehicle
+);
+
+router.delete("/:id", authMiddleware, deleteVehicle);
 
 module.exports = router;

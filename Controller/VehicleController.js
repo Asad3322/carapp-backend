@@ -53,7 +53,7 @@ const uploadVehicleFiles = async (files) => {
       const url = await uploadFileToSupabase(
         file,
         "insurance-documents",
-        "vehicles"
+        "vehicles",
       );
       if (url) insuranceUrls.push(url);
     }
@@ -62,7 +62,11 @@ const uploadVehicleFiles = async (files) => {
   return { vehicleMediaUrls, insuranceUrls };
 };
 
-const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
+const linkOldReportsToOwner = async ({
+  profileId,
+  vehicleId,
+  licencePlate,
+}) => {
   try {
     if (!profileId || !vehicleId || !licencePlate) {
       console.log("❌ Missing data for report linking:", {
@@ -112,7 +116,7 @@ const createVehicleOnboarding = async (req, res) => {
         res,
         400,
         false,
-        "vehicleName and licencePlate are required"
+        "vehicleName and licencePlate are required",
       );
     }
 
@@ -134,7 +138,7 @@ const createVehicleOnboarding = async (req, res) => {
     }
 
     const { vehicleMediaUrls, insuranceUrls } = await uploadVehicleFiles(
-      req.files
+      req.files,
     );
 
     const payload = {
@@ -171,7 +175,7 @@ const createVehicleOnboarding = async (req, res) => {
         vehicleMediaUrls,
         insuranceUrls,
         next_step: "account_creation",
-      })
+      }),
     );
   } catch (error) {
     console.error("Create Vehicle Onboarding Error:", error);
@@ -179,7 +183,7 @@ const createVehicleOnboarding = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Failed to create vehicle"
+      error.message || "Failed to create vehicle",
     );
   }
 };
@@ -213,7 +217,7 @@ const createVehicle = async (req, res) => {
         res,
         400,
         false,
-        "vehicleName and licencePlate are required"
+        "vehicleName and licencePlate are required",
       );
     }
 
@@ -235,7 +239,7 @@ const createVehicle = async (req, res) => {
     }
 
     const { vehicleMediaUrls, insuranceUrls } = await uploadVehicleFiles(
-      req.files
+      req.files,
     );
 
     const payload = {
@@ -277,7 +281,7 @@ const createVehicle = async (req, res) => {
         ...data,
         vehicleMediaUrls,
         insuranceUrls,
-      })
+      }),
     );
   } catch (error) {
     console.error("Create Vehicle Error:", error);
@@ -285,7 +289,7 @@ const createVehicle = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Failed to create vehicle"
+      error.message || "Failed to create vehicle",
     );
   }
 };
@@ -312,7 +316,7 @@ const claimVehicle = async (req, res) => {
         res,
         400,
         false,
-        "Licence plate or vehicleId is required"
+        "Licence plate or vehicleId is required",
       );
     }
 
@@ -335,19 +339,19 @@ const claimVehicle = async (req, res) => {
       return sendResponse(res, 404, false, "Vehicle not found");
     }
 
-    if (vehicle.owner_id && vehicle.owner_id !== ownerAuthId) {
+    if (vehicle.owner_id && vehicle.owner_id !== ownerProfileId) {
       return sendResponse(
         res,
         409,
         false,
-        "This vehicle is already claimed by another owner"
+        "This vehicle is already claimed by another owner",
       );
     }
 
     const { data, error } = await supabase
       .from("vehicles")
       .update({
-        owner_id: ownerAuthId,
+        owner_id: ownerProfileId,
         is_claimed: true,
         registration_source: "claimed_after_onboarding",
         updated_at: new Date().toISOString(),
@@ -361,7 +365,7 @@ const claimVehicle = async (req, res) => {
         res,
         404,
         false,
-        error?.message || "Vehicle not found"
+        error?.message || "Vehicle not found",
       );
     }
 
@@ -376,7 +380,7 @@ const claimVehicle = async (req, res) => {
       200,
       true,
       "Vehicle claimed successfully",
-      normalizeVehicle(data)
+      normalizeVehicle(data),
     );
   } catch (error) {
     console.error("Claim Vehicle Error:", error);
@@ -384,7 +388,7 @@ const claimVehicle = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Failed to claim vehicle"
+      error.message || "Failed to claim vehicle",
     );
   }
 };
@@ -393,17 +397,21 @@ const claimVehicle = async (req, res) => {
 const getAllVehicles = async (req, res) => {
   try {
     const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
-    console.log("🚗 GET VEHICLES OWNER AUTH ID:", ownerAuthId);
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
+    }
 
     const { data, error } = await supabase
       .from("vehicles")
       .select("*")
-      .eq("owner_id", ownerAuthId)
+      .eq("owner_id", ownerProfileId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -416,7 +424,7 @@ const getAllVehicles = async (req, res) => {
       200,
       true,
       "Vehicles fetched successfully",
-      (data || []).map(normalizeVehicle)
+      (data || []).map(normalizeVehicle),
     );
   } catch (error) {
     console.error("Get Vehicles Error:", error);
@@ -428,16 +436,22 @@ const getAllVehicles = async (req, res) => {
 const getSingleVehicle = async (req, res) => {
   try {
     const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
 
     if (!ownerAuthId) {
       return sendResponse(res, 401, false, "Unauthorized");
+    }
+
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
     }
 
     const { data, error } = await supabase
       .from("vehicles")
       .select("*")
       .eq("id", req.params.id)
-      .eq("owner_id", ownerAuthId)
+      .eq("owner_id", ownerProfileId)
       .maybeSingle();
 
     if (error || !data) {
@@ -449,11 +463,163 @@ const getSingleVehicle = async (req, res) => {
       200,
       true,
       "Vehicle fetched successfully",
-      normalizeVehicle(data)
+      normalizeVehicle(data),
     );
   } catch (error) {
     console.error("Get Single Vehicle Error:", error);
     return sendResponse(res, 500, false, "Failed to fetch vehicle");
+  }
+};
+const updateVehicle = async (req, res) => {
+  try {
+    const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+
+    if (!ownerAuthId) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
+
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
+    }
+
+    const { vehicleName, licencePlate } = req.body;
+
+    const { data: existingVehicle, error: existingError } = await supabase
+      .from("vehicles")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("owner_id", ownerProfileId)
+      .maybeSingle();
+
+    if (existingError || !existingVehicle) {
+      return sendResponse(res, 404, false, "Vehicle not found");
+    }
+
+    const { vehicleMediaUrls, insuranceUrls } = await uploadVehicleFiles(
+      req.files,
+    );
+
+    const updatePayload = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (vehicleName) updatePayload.vehicle_name = vehicleName.trim();
+
+    if (licencePlate) {
+      const normalizedPlate = normalizePlate(licencePlate);
+
+      const { data: duplicateVehicle, error: duplicateError } = await supabase
+        .from("vehicles")
+        .select("id")
+        .eq("licence_plate", normalizedPlate)
+        .neq("id", req.params.id)
+        .maybeSingle();
+
+      if (duplicateError) {
+        return sendResponse(res, 500, false, duplicateError.message);
+      }
+
+      if (duplicateVehicle) {
+        return sendResponse(res, 409, false, "Licence Plate already exists");
+      }
+
+      updatePayload.licence_plate = normalizedPlate;
+    }
+
+    if (vehicleMediaUrls.length > 0) {
+      updatePayload.vehicle_media = vehicleMediaUrls;
+    }
+
+    if (insuranceUrls.length > 0) {
+      updatePayload.insurance_certificate = insuranceUrls;
+    }
+
+    const { data, error } = await supabase
+      .from("vehicles")
+      .update(updatePayload)
+      .eq("id", req.params.id)
+      .eq("owner_id", ownerProfileId)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Update vehicle error:", error);
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      "Vehicle updated successfully",
+      normalizeVehicle(data),
+    );
+  } catch (error) {
+    console.error("Update Vehicle Error:", error);
+    return sendResponse(res, 500, false, "Failed to update vehicle");
+  }
+};
+
+const deleteVehicle = async (req, res) => {
+  try {
+    const ownerAuthId = req.user?.id || null;
+    const ownerProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+
+    if (!ownerAuthId) {
+      return sendResponse(res, 401, false, "Unauthorized");
+    }
+
+    if (!ownerProfileId) {
+      return sendResponse(res, 404, false, "Owner profile not found");
+    }
+
+    const { data: vehicle, error: findError } = await supabase
+      .from("vehicles")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("owner_id", ownerProfileId)
+      .maybeSingle();
+
+    if (findError || !vehicle) {
+      return sendResponse(res, 404, false, "Vehicle not found");
+    }
+
+    await supabase
+      .from("reports")
+      .update({
+        receiver_id: null,
+        vehicle_id: null,
+        plate_registered: false,
+        flow_type: "unregistered_plate",
+        status: "pending_registration",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("vehicle_id", req.params.id);
+
+    const { error } = await supabase
+      .from("vehicles")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("owner_id", ownerProfileId);
+
+    if (error) {
+      console.error("Delete vehicle error:", error);
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      "Vehicle deleted successfully",
+      vehicle,
+    );
+  } catch (error) {
+    console.error("Delete Vehicle Error:", error);
+    return sendResponse(res, 500, false, "Failed to delete vehicle");
   }
 };
 
@@ -463,4 +629,6 @@ module.exports = {
   claimVehicle,
   getAllVehicles,
   getSingleVehicle,
+  updateVehicle,
+  deleteVehicle,
 };
