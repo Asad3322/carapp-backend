@@ -205,8 +205,7 @@ const createReport = async (req, res) => {
 
     const reporterAuthId = req.user?.id || null;
 
-    const reporterProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(reporterAuthId));
+    const reporterProfileId = await getProfileIdFromAuthUserId(reporterAuthId);
 
     console.log("📝 CREATE REPORT USER:", {
       reporterAuthId,
