@@ -210,6 +210,15 @@ const createReport = async (req, res) => {
 
     const reporterAuthId = req.user?.id || null;
 
+    // ✅ FIX: DEFINE FIRST
+    const reporterProfileId = await getProfileIdFromAuthUserId(reporterAuthId);
+
+    // ❌ NOT LOGGED IN
+    if (!reporterAuthId) {
+      return sendResponse(res, 401, false, "Unauthorized. Please login first.");
+    }
+
+    // ❌ PROFILE NOT CREATED
     if (!reporterProfileId) {
       console.log("❌ NO PROFILE FOUND — BLOCKING REPORT");
 
@@ -227,7 +236,6 @@ const createReport = async (req, res) => {
       email: req.user?.email,
       role: req.user?.role,
     });
-
     if (!licencePlate || !urgency || !description) {
       return sendResponse(
         res,
