@@ -117,6 +117,47 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
   }
 };
 
+
+const linkPendingReportsToReporter = async ({ profileId, pendingReportId, pendingReportIds }) => {
+  try {
+    if (!profileId) return [];
+
+    const ids = [];
+
+    if (pendingReportId) ids.push(pendingReportId);
+
+    if (Array.isArray(pendingReportIds)) {
+      pendingReportIds.forEach((id) => {
+        if (id) ids.push(id);
+      });
+    }
+
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (!uniqueIds.length) return [];
+
+    const { data, error } = await supabase
+      .from("reports")
+      .update({
+        reporter_id: profileId,
+        is_anonymous: false,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", uniqueIds)
+      .is("reporter_id", null)
+      .select("id");
+
+    if (error) {
+      console.error("Link pending reports error:", error);
+      throw new Error(error.message || "Failed to link pending report");
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("linkPendingReportsToReporter error:", error);
+    throw error;
+  }
+};
+
 const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
   if (!authUserId || !profileId || !vehicleId) return null;
 
@@ -186,6 +227,8 @@ const createProfileAfterAuth = async (req, res) => {
       phone: bodyPhone,
       profileImage,
       avatar_url,
+      pendingReportId,
+      pendingReportIds,
     } = req.body;
 
     const finalRole = role === "vehicle_owner" ? "vehicle_owner" : "reporter";
@@ -229,6 +272,15 @@ const createProfileAfterAuth = async (req, res) => {
         return sendResponse(res, 500, false, updateError.message);
       }
 
+      let linkedReports = [];
+      if (finalRole === "reporter") {
+        linkedReports = await linkPendingReportsToReporter({
+          profileId: existingProfile.id,
+          pendingReportId,
+          pendingReportIds,
+        });
+      }
+
       let claimedVehicle = null;
 
       if (finalRole === "vehicle_owner" && vehicleId) {
@@ -242,6 +294,7 @@ const createProfileAfterAuth = async (req, res) => {
       return sendResponse(res, 200, true, "Profile updated successfully", {
         profile: updatedProfile,
         vehicle: claimedVehicle,
+        linkedReports,
       });
     }
 
@@ -275,6 +328,15 @@ const createProfileAfterAuth = async (req, res) => {
       return sendResponse(res, 500, false, createError.message);
     }
 
+    let linkedReports = [];
+    if (finalRole === "reporter") {
+      linkedReports = await linkPendingReportsToReporter({
+        profileId: createdProfile.id,
+        pendingReportId,
+        pendingReportIds,
+      });
+    }
+
     let claimedVehicle = null;
 
     if (finalRole === "vehicle_owner" && vehicleId) {
@@ -288,6 +350,7 @@ const createProfileAfterAuth = async (req, res) => {
     return sendResponse(res, 201, true, "Profile created successfully", {
       profile: createdProfile,
       vehicle: claimedVehicle,
+      linkedReports,
     });
   } catch (error) {
     console.error("createProfileAfterAuth error:", error);

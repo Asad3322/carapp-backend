@@ -213,22 +213,9 @@ const createReport = async (req, res) => {
     // ✅ FIX: DEFINE FIRST
     const reporterProfileId = await getProfileIdFromAuthUserId(reporterAuthId);
 
-    // ❌ NOT LOGGED IN
-    if (!reporterAuthId) {
-      return sendResponse(res, 401, false, "Unauthorized. Please login first.");
-    }
-
-    // ❌ PROFILE NOT CREATED
-    if (!reporterProfileId) {
-      console.log("❌ NO PROFILE FOUND — BLOCKING REPORT");
-
-      return sendResponse(
-        res,
-        403,
-        false,
-        "Complete profile first before submitting report",
-      );
-    }
+    // PRD reporter flow allows submitting the report before login/profile.
+    // If no logged-in profile exists yet, save it as an anonymous pending report.
+    // It will be linked to the reporter after magic-link login/profile completion.
 
     console.log("📝 CREATE REPORT USER:", {
       reporterAuthId,
