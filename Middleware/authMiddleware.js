@@ -1,15 +1,15 @@
 const supabase = require("../Config/supabaseClient");
-const sendResponse = require("../Utils/sendResponse");
 
 const authMiddleware = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = req.headers.authorization?.split(" ")[1];
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return sendResponse(res, 401, false, "Authorization token is required");
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - No token",
+      });
     }
-
-    const token = authHeader.split(" ")[1];
 
     const {
       data: { user },
@@ -17,33 +17,35 @@ const authMiddleware = async (req, res, next) => {
     } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      return sendResponse(res, 401, false, "Invalid or expired token");
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - Invalid token",
+      });
     }
 
+    // 🔥 IMPORTANT: fetch profile
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, auth_user_id, role, username, phone, email")
+      .select("id")
       .eq("auth_user_id", user.id)
       .maybeSingle();
 
     if (profileError) {
       console.error("Profile fetch error:", profileError);
-      return sendResponse(res, 500, false, "Error fetching user profile");
     }
 
     req.user = {
-      id: user.id,
-      email: user.email || null,
-      phone: user.phone || null,
-      role: profile?.role || "user",
-      profileId: profile?.id || null,
-      username: profile?.username || null,
+      ...user,
+      profileId: profile?.id || null, // 🔥 FIX
     };
 
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
-    return sendResponse(res, 500, false, "Authentication failed", err.message);
+    console.error("Auth Middleware Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 
