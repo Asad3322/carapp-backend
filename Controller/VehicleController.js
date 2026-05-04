@@ -243,7 +243,7 @@ const createVehicle = async (req, res) => {
       licence_plate: normalizedPlate,
       vehicle_media: vehicleMediaUrls,
       insurance_certificate: insuranceUrls,
-      owner_id: ownerAuthId,
+      owner_id: ownerProfileId,
       is_claimed: true,
       registration_source: "registered_user",
       updated_at: new Date().toISOString(),
