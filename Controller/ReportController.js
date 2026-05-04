@@ -173,6 +173,23 @@ const getProfileIdFromAuthUserId = async (authUserId) => {
   return data?.id || null;
 };
 
+const getValidOwnerProfileId = async (ownerId) => {
+  if (!ownerId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", ownerId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Owner profile lookup error:", error);
+    return null;
+  }
+
+  return data?.id || null;
+};
+
 const createReport = async (req, res) => {
   try {
     const { licencePlate, urgency, description } = req.body;
@@ -218,15 +235,24 @@ const createReport = async (req, res) => {
     }
 
     if (vehicle) {
-      vehicleId = vehicle.id;
       vehicleName = vehicle.vehicle_name || null;
 
-      // ✅ IMPORTANT FIX:
-      // vehicles.owner_id is now profile.id, so use it directly.
-      // Do NOT call getProfileIdFromAuthUserId(vehicle.owner_id).
-      if (vehicle.owner_id) {
-        receiverId = vehicle.owner_id;
+      const validOwnerProfileId = await getValidOwnerProfileId(vehicle.owner_id);
+
+      if (validOwnerProfileId) {
+        receiverId = validOwnerProfileId;
+        vehicleId = vehicle.id;
         ownerFound = true;
+      } else {
+        console.log("⚠️ Vehicle exists but valid owner profile not found:", {
+          plate: normalizedPlate,
+          vehicleId: vehicle.id,
+          owner_id: vehicle.owner_id,
+        });
+
+        receiverId = null;
+        vehicleId = null;
+        ownerFound = false;
       }
     }
 
@@ -311,7 +337,7 @@ const createReport = async (req, res) => {
           title: ownerFound ? "Plate matched" : "Unregistered plate reported",
           message: ownerFound
             ? `Plate ${normalizedPlate} matched with a registered owner`
-            : `Plate ${normalizedPlate} was reported but no owner was found`,
+            : `Plate ${normalizedPlate} was reported but no valid owner was found`,
           reportId: data.id,
         });
       }
