@@ -23,20 +23,35 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // 🔥 IMPORTANT: fetch profile
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, auth_user_id, email, phone, role")
       .eq("auth_user_id", user.id)
       .maybeSingle();
 
     if (profileError) {
       console.error("Profile fetch error:", profileError);
+      return res.status(500).json({
+        success: false,
+        message: "Profile fetch failed",
+      });
+    }
+
+    if (!profile?.id) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found for this authenticated user",
+      });
     }
 
     req.user = {
       ...user,
-      profileId: profile?.id || null, // 🔥 FIX
+      id: user.id,
+      email: user.email,
+      profileId: profile.id,
+      profileRole: profile.role,
+      profileEmail: profile.email,
+      profilePhone: profile.phone,
     };
 
     next();
