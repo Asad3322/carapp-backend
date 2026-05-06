@@ -37,21 +37,14 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    if (!profile?.id) {
-      return res.status(404).json({
-        success: false,
-        message: "Profile not found for this authenticated user",
-      });
-    }
-
     req.user = {
       ...user,
       id: user.id,
       email: user.email,
-      profileId: profile.id,
-      profileRole: profile.role,
-      profileEmail: profile.email,
-      profilePhone: profile.phone,
+      profileId: profile?.id || null,
+      profileRole: profile?.role || null,
+      profileEmail: profile?.email || null,
+      profilePhone: profile?.phone || null,
     };
 
     next();
