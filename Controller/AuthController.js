@@ -182,7 +182,7 @@ const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
   const { data: claimedVehicle, error: claimError } = await supabase
     .from("vehicles")
     .update({
-      owner_id: authUserId,
+      owner_id: profileId,
       is_claimed: true,
       registration_source: "claimed_after_onboarding",
       updated_at: new Date().toISOString(),
