@@ -37,7 +37,7 @@ router.get("/me", async (req, res) => {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, username, email, phone, role, coins, points, reports_count, streak, badges, last_report_date, profileImage, avatar_url"
+        "id, username, email, phone, role, coins, points, reports_count, streak, badges, last_report_date, avatar_url"
       )
       .eq("auth_user_id", user.id)
       .maybeSingle();
@@ -47,6 +47,9 @@ router.get("/me", async (req, res) => {
       return res.status(500).json({
         success: false,
         message: "Error fetching gamification profile",
+        error: profileError.message,
+        details: profileError.details,
+        hint: profileError.hint,
       });
     }
 
@@ -58,7 +61,7 @@ router.get("/me", async (req, res) => {
         email: profile?.email || user.email || null,
         phone: profile?.phone || user.phone || null,
         role: profile?.role || null,
-        avatarUrl: profile?.avatar_url || profile?.profileImage || null,
+        avatarUrl: profile?.avatar_url || null,
         coins: Number(profile?.coins || 0),
         points: Number(profile?.points || 0),
         reportsCount: Number(profile?.reports_count || 0),
@@ -72,6 +75,7 @@ router.get("/me", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
+      error: err.message,
     });
   }
 });
@@ -81,7 +85,7 @@ router.get("/leaderboard", async (req, res) => {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, username, email, phone, role, coins, points, reports_count, streak, badges, profileImage, avatar_url"
+        "id, username, email, phone, role, coins, points, reports_count, streak, badges, avatar_url"
       )
       .order("points", { ascending: false })
       .order("coins", { ascending: false })
@@ -92,6 +96,9 @@ router.get("/leaderboard", async (req, res) => {
       return res.status(500).json({
         success: false,
         message: "Error fetching leaderboard",
+        error: error.message,
+        details: error.details,
+        hint: error.hint,
       });
     }
 
@@ -106,7 +113,7 @@ router.get("/leaderboard", async (req, res) => {
           profile.email?.split("@")[0] ||
           profile.phone ||
           "User",
-        avatarUrl: profile.avatar_url || profile.profileImage || null,
+        avatarUrl: profile.avatar_url || null,
         role: profile.role,
         coins: Number(profile.coins || 0),
         points: Number(profile.points || 0),
@@ -126,6 +133,7 @@ router.get("/leaderboard", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
+      error: err.message,
     });
   }
 });
