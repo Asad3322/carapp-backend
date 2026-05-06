@@ -23,6 +23,13 @@ const getUserFromToken = async (req) => {
   return { user, error: null };
 };
 
+router.get("/leaderboard-test", async (req, res) => {
+  return res.json({
+    success: true,
+    message: "New backend code is live",
+  });
+});
+
 router.get("/me", async (req, res) => {
   try {
     const { user, error } = await getUserFromToken(req);
