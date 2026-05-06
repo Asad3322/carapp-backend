@@ -37,7 +37,7 @@ router.get("/me", async (req, res) => {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, username, email, phone, role, coins, points, reports_count, streak, badges, last_report_date"
+        "id, username, email, phone, role, coins, points, reports_count, streak, badges, last_report_date, profileImage, avatar_url"
       )
       .eq("auth_user_id", user.id)
       .maybeSingle();
@@ -58,6 +58,7 @@ router.get("/me", async (req, res) => {
         email: profile?.email || user.email || null,
         phone: profile?.phone || user.phone || null,
         role: profile?.role || null,
+        avatarUrl: profile?.avatar_url || profile?.profileImage || null,
         coins: Number(profile?.coins || 0),
         points: Number(profile?.points || 0),
         reportsCount: Number(profile?.reports_count || 0),
@@ -79,7 +80,9 @@ router.get("/leaderboard", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, email, phone, role, coins, points, reports_count, streak, badges")
+      .select(
+        "id, username, email, phone, role, coins, points, reports_count, streak, badges, profileImage, avatar_url"
+      )
       .order("points", { ascending: false })
       .order("coins", { ascending: false })
       .limit(20);
@@ -103,6 +106,7 @@ router.get("/leaderboard", async (req, res) => {
           profile.email?.split("@")[0] ||
           profile.phone ||
           "User",
+        avatarUrl: profile.avatar_url || profile.profileImage || null,
         role: profile.role,
         coins: Number(profile.coins || 0),
         points: Number(profile.points || 0),
@@ -129,8 +133,7 @@ router.get("/leaderboard", async (req, res) => {
 router.post("/reward", async (req, res) => {
   return res.json({
     success: true,
-    message:
-      "Reward is now handled automatically when a report is submitted.",
+    message: "Reward is now handled automatically when a report is submitted.",
   });
 });
 
