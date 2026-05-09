@@ -1,6 +1,5 @@
 const {
   sendVerificationService,
-  getUserByContactService,
   verifyPhoneMagicLinkService,
 } = require("../Service/AuthService");
 
@@ -117,8 +116,11 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
   }
 };
 
-
-const linkPendingReportsToReporter = async ({ profileId, pendingReportId, pendingReportIds }) => {
+const linkPendingReportsToReporter = async ({
+  profileId,
+  pendingReportId,
+  pendingReportIds,
+}) => {
   try {
     if (!profileId) return [];
 
@@ -158,8 +160,8 @@ const linkPendingReportsToReporter = async ({ profileId, pendingReportId, pendin
   }
 };
 
-const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
-  if (!authUserId || !profileId || !vehicleId) return null;
+const claimVehicleForOwner = async ({ profileId, vehicleId }) => {
+  if (!profileId || !vehicleId) return null;
 
   const { data: vehicle, error: findError } = await supabase
     .from("vehicles")
@@ -175,7 +177,7 @@ const claimVehicleForOwner = async ({ authUserId, profileId, vehicleId }) => {
     throw new Error("Vehicle not found");
   }
 
-  if (vehicle.owner_id && vehicle.owner_id !== authUserId) {
+  if (vehicle.owner_id && vehicle.owner_id !== profileId) {
     throw new Error("This vehicle is already claimed by another owner");
   }
 
@@ -247,11 +249,16 @@ const createProfileAfterAuth = async (req, res) => {
 
     // ================= EXISTING PROFILE =================
     if (existingProfile) {
+      const safeRole = existingProfile.role || finalRole;
+
       const updatePayload = {
-        role: finalRole,
+        role: safeRole,
         email: finalEmail || existingProfile.email,
         phone: finalPhone || existingProfile.phone,
-        primary_contact: finalRole === "vehicle_owner" ? "SMS" : "Email",
+        primary_contact:
+          finalRole === "vehicle_owner"
+            ? "SMS"
+            : existingProfile.primary_contact || "Email",
         updated_at: new Date().toISOString(),
       };
 
@@ -285,7 +292,6 @@ const createProfileAfterAuth = async (req, res) => {
 
       if (finalRole === "vehicle_owner" && vehicleId) {
         claimedVehicle = await claimVehicleForOwner({
-          authUserId: authUser.id,
           profileId: existingProfile.id,
           vehicleId,
         });
@@ -341,7 +347,6 @@ const createProfileAfterAuth = async (req, res) => {
 
     if (finalRole === "vehicle_owner" && vehicleId) {
       claimedVehicle = await claimVehicleForOwner({
-        authUserId: authUser.id,
         profileId: createdProfile.id,
         vehicleId,
       });
