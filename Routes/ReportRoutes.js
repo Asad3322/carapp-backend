@@ -5,18 +5,13 @@ const upload = require("../Utils/multer");
 const validate = require("../Middleware/validate");
 const authMiddleware = require("../Middleware/authMiddleware");
 const optionalAuthMiddleware = require("../Middleware/optionalAuthMiddleware");
+
 const { createReportSchema } = require("../Validations/reportValidation");
 
-const {
-  createReport,
-  getAllReports,
-  getSingleReport,
-  getSentReports,
-  getReceivedReports,
-  updateReportStatus,
-} = require("../Controller/ReportController");
+const ReportController = require("../Controller/ReportController");
 
-// PUBLIC + OPTIONAL AUTH ROUTE
+router.post("/autosave", ReportController.autoSaveDraft);
+
 router.post(
   "/",
   optionalAuthMiddleware,
@@ -25,14 +20,21 @@ router.post(
     { name: "insuranceCertificate", maxCount: 1 },
   ]),
   validate(createReportSchema),
-  createReport
+  ReportController.createReport
 );
 
-// PROTECTED ROUTES
-router.get("/", authMiddleware, getAllReports);
-router.get("/sent", authMiddleware, getSentReports);
-router.get("/received", authMiddleware, getReceivedReports);
-router.get("/:id", authMiddleware, getSingleReport);
-router.patch("/:id/status", authMiddleware, updateReportStatus);
+router.get("/", authMiddleware, ReportController.getAllReports);
+
+router.get("/sent", authMiddleware, ReportController.getSentReports);
+
+router.get("/received", authMiddleware, ReportController.getReceivedReports);
+
+router.get("/:id", authMiddleware, ReportController.getSingleReport);
+
+router.patch(
+  "/:id/status",
+  authMiddleware,
+  ReportController.updateReportStatus
+);
 
 module.exports = router;

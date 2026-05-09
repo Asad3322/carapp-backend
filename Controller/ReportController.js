@@ -126,7 +126,9 @@ const updateGamification = async (profileId) => {
       badge: newlyUnlockedBadges[0] || badges[badges.length - 1] || null,
       badges,
       newlyUnlockedBadges,
-      reward: newlyUnlockedBadges.length ? "+10 Coins + Badge Bonus" : "+10 Coins",
+      reward: newlyUnlockedBadges.length
+        ? "+10 Coins + Badge Bonus"
+        : "+10 Coins",
       isGuestReward: false,
     };
   } catch (error) {
@@ -135,7 +137,13 @@ const updateGamification = async (profileId) => {
   }
 };
 
-const createNotification = async ({ userId, type, title, message, reportId = null }) => {
+const createNotification = async ({
+  userId,
+  type,
+  title,
+  message,
+  reportId = null,
+}) => {
   try {
     if (!userId) return;
 
@@ -188,6 +196,67 @@ const getValidOwnerProfileId = async (ownerId) => {
   }
 
   return data?.id || null;
+};
+
+const autoSaveDraft = async (req, res) => {
+  try {
+    const { anonymousUserId, licencePlate, urgency, description } = req.body;
+
+    if (!anonymousUserId || (!licencePlate && !urgency && !description)) {
+      return sendResponse(res, 400, false, "Missing autosave data");
+    }
+
+    const payload = {
+      anonymous_user_id: anonymousUserId,
+      licence_plate: licencePlate ? normalizePlate(licencePlate) : null,
+      urgency: urgency || null,
+      description: description ? String(description).trim() : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existingDraft, error: findError } = await supabase
+      .from("report_drafts")
+      .select("id")
+      .eq("anonymous_user_id", anonymousUserId)
+      .maybeSingle();
+
+    if (findError) {
+      console.error("Autosave find error:", findError);
+      return sendResponse(res, 500, false, findError.message);
+    }
+
+    let result;
+
+    if (existingDraft?.id) {
+      result = await supabase
+        .from("report_drafts")
+        .update(payload)
+        .eq("id", existingDraft.id)
+        .select()
+        .single();
+    } else {
+      result = await supabase
+        .from("report_drafts")
+        .insert([payload])
+        .select()
+        .single();
+    }
+
+    if (result.error) {
+      console.error("Autosave save error:", result.error);
+      return sendResponse(res, 500, false, result.error.message);
+    }
+
+    return sendResponse(res, 200, true, "Draft auto-saved", result.data);
+  } catch (error) {
+    console.error("AutoSave Draft Error:", error);
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Failed to auto-save draft"
+    );
+  }
 };
 
 const createReport = async (req, res) => {
@@ -283,15 +352,12 @@ const createReport = async (req, res) => {
       description: description.trim(),
       insurance_certificate: insuranceUrls,
       medias: mediaUrls,
-
       reporter_id: reporterProfileId,
       receiver_id: receiverId,
       vehicle_id: ownerFound ? vehicleId : null,
-
       plate_registered: ownerFound,
       flow_type: ownerFound ? "registered_plate" : "unregistered_plate",
       status: ownerFound ? "reported" : "pending_registration",
-
       is_anonymous: !reporterProfileId,
     };
 
@@ -333,7 +399,9 @@ const createReport = async (req, res) => {
       for (const admin of admins) {
         await createNotification({
           userId: admin.id,
-          type: ownerFound ? "admin_report_linked" : "admin_unregistered_plate_report",
+          type: ownerFound
+            ? "admin_report_linked"
+            : "admin_unregistered_plate_report",
           title: ownerFound ? "Plate matched" : "Unregistered plate reported",
           message: ownerFound
             ? `Plate ${normalizedPlate} matched with a registered owner`
@@ -442,7 +510,13 @@ const getSentReports = async (req, res) => {
     });
 
     if (!reporterProfileId) {
-      return sendResponse(res, 200, true, "Sent reports fetched successfully", []);
+      return sendResponse(
+        res,
+        200,
+        true,
+        "Sent reports fetched successfully",
+        []
+      );
     }
 
     const { data, error } = await supabase
@@ -456,7 +530,13 @@ const getSentReports = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    return sendResponse(res, 200, true, "Sent reports fetched successfully", data);
+    return sendResponse(
+      res,
+      200,
+      true,
+      "Sent reports fetched successfully",
+      data
+    );
   } catch (error) {
     console.error("Get Sent Reports Error:", error);
     return sendResponse(res, 500, false, "Failed to fetch sent reports");
@@ -477,7 +557,13 @@ const getReceivedReports = async (req, res) => {
     });
 
     if (!receiverProfileId) {
-      return sendResponse(res, 200, true, "Received reports fetched successfully", []);
+      return sendResponse(
+        res,
+        200,
+        true,
+        "Received reports fetched successfully",
+        []
+      );
     }
 
     const { data, error } = await supabase
@@ -491,7 +577,13 @@ const getReceivedReports = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    return sendResponse(res, 200, true, "Received reports fetched successfully", data);
+    return sendResponse(
+      res,
+      200,
+      true,
+      "Received reports fetched successfully",
+      data
+    );
   } catch (error) {
     console.error("Get Received Reports Error:", error);
     return sendResponse(res, 500, false, "Failed to fetch received reports");
@@ -527,10 +619,14 @@ const updateReportStatus = async (req, res) => {
     }
 
     const isOwner =
-      report.receiver_id && currentProfileId && report.receiver_id === currentProfileId;
+      report.receiver_id &&
+      currentProfileId &&
+      report.receiver_id === currentProfileId;
 
     const isReporter =
-      report.reporter_id && currentProfileId && report.reporter_id === currentProfileId;
+      report.reporter_id &&
+      currentProfileId &&
+      report.reporter_id === currentProfileId;
 
     const isAdmin = currentUserRole === "admin";
 
@@ -558,7 +654,13 @@ const updateReportStatus = async (req, res) => {
       return sendResponse(res, 500, false, error.message);
     }
 
-    return sendResponse(res, 200, true, "Report status updated successfully", data);
+    return sendResponse(
+      res,
+      200,
+      true,
+      "Report status updated successfully",
+      data
+    );
   } catch (error) {
     console.error("Update Report Status Error:", error);
     return sendResponse(res, 500, false, "Failed to update report status");
@@ -572,4 +674,5 @@ module.exports = {
   getSentReports,
   getReceivedReports,
   updateReportStatus,
+  autoSaveDraft,
 };
