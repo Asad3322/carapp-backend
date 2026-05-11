@@ -51,7 +51,7 @@ const sendVerification = async (req, res) => {
       {
         ...result,
         verificationLink,
-      }
+      },
     );
   } catch (error) {
     console.error("❌ sendVerification error:", error);
@@ -59,7 +59,7 @@ const sendVerification = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Internal server error"
+      error.message || "Internal server error",
     );
   }
 };
@@ -86,12 +86,16 @@ const verifyPhoneMagicLink = async (req, res) => {
       res,
       400,
       false,
-      error.message || "Invalid verification link"
+      error.message || "Invalid verification link",
     );
   }
 };
 
-const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
+const linkOldReportsToOwner = async ({
+  profileId,
+  vehicleId,
+  licencePlate,
+}) => {
   try {
     if (!profileId || !vehicleId || !licencePlate) return;
 
@@ -249,21 +253,24 @@ const createProfileAfterAuth = async (req, res) => {
 
     // ================= EXISTING PROFILE =================
     if (existingProfile) {
-      const safeRole = existingProfile.role || finalRole;
+      // ✅ IMPORTANT FIX:
+      // Allow existing reporter profile to become vehicle_owner
+      const upgradedRole =
+        finalRole === "vehicle_owner"
+          ? "vehicle_owner"
+          : existingProfile.role || "reporter";
 
       const updatePayload = {
-        role: safeRole,
+        role: upgradedRole,
         email: finalEmail || existingProfile.email,
         phone: finalPhone || existingProfile.phone,
-        primary_contact:
-          finalRole === "vehicle_owner"
-            ? "SMS"
-            : existingProfile.primary_contact || "Email",
+        primary_contact: upgradedRole === "vehicle_owner" ? "SMS" : "Email",
         updated_at: new Date().toISOString(),
       };
 
       if (username) updatePayload.username = username;
       if (name) updatePayload.name = name;
+
       if (avatar_url || profileImage) {
         updatePayload.avatar_url = avatar_url || profileImage;
       }
@@ -280,6 +287,7 @@ const createProfileAfterAuth = async (req, res) => {
       }
 
       let linkedReports = [];
+
       if (finalRole === "reporter") {
         linkedReports = await linkPendingReportsToReporter({
           profileId: existingProfile.id,
@@ -322,7 +330,7 @@ const createProfileAfterAuth = async (req, res) => {
           phone: finalPhone,
           role: finalRole,
           avatar_url: avatar_url || profileImage || null,
-          language: "French",
+          language: "fr",
           primary_contact: finalRole === "vehicle_owner" ? "SMS" : "Email",
           updated_at: new Date().toISOString(),
         },
@@ -335,6 +343,7 @@ const createProfileAfterAuth = async (req, res) => {
     }
 
     let linkedReports = [];
+
     if (finalRole === "reporter") {
       linkedReports = await linkPendingReportsToReporter({
         profileId: createdProfile.id,
@@ -363,7 +372,7 @@ const createProfileAfterAuth = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Something went wrong"
+      error.message || "Something went wrong",
     );
   }
 };
