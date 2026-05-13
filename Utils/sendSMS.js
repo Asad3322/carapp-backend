@@ -1,39 +1,46 @@
-const ovh = require("ovh");
+const { Vonage } = require("@vonage/server-sdk");
 
-const client = ovh({
-  endpoint: "ovh-eu",
-  appKey: process.env.OVH_APP_KEY,
-  appSecret: process.env.OVH_APP_SECRET,
-  consumerKey: process.env.OVH_CONSUMER_KEY,
+const vonage = new Vonage({
+  apiKey: process.env.VONAGE_API_KEY,
+  apiSecret: process.env.VONAGE_API_SECRET,
 });
 
+const normalizePhoneNumber = (phone = "") => {
+  let cleaned = String(phone).replace(/\s+/g, "").trim();
+
+  if (cleaned.startsWith("+")) {
+    cleaned = cleaned.slice(1);
+  }
+
+  if (cleaned.startsWith("00")) {
+    cleaned = cleaned.slice(2);
+  }
+
+  return cleaned;
+};
+
 const sendSMS = async ({ to, message }) => {
-  if (!to) throw new Error("Phone required");
-  if (!message) throw new Error("Message required");
+  try {
+    if (!to) throw new Error("Phone required");
+    if (!message) throw new Error("Message required");
 
-  const serviceName = process.env.OVH_SMS_SERVICE_NAME;
+    const formattedPhone = normalizePhoneNumber(to);
 
-  return new Promise((resolve, reject) => {
-    client.request(
-      "POST",
-      `/sms/${serviceName}/jobs`,
-      {
-        message,
-        receivers: [to],
-        sender: process.env.OVH_SMS_SENDER,
-        senderForResponse: true,
-      },
-      (error, result) => {
-        if (error) {
-          console.error("❌ OVH Error:", error);
-          return reject(error);
-        }
+    console.log("📲 Sending Vonage SMS to:", formattedPhone);
 
-        console.log("✅ SMS Sent:", result);
-        resolve(result);
-      }
-    );
-  });
+    const response = await vonage.sms.send({
+      to: formattedPhone,
+      from: "Vonage",
+      text: message,
+    });
+
+    console.log("✅ Vonage SMS Sent:", response);
+
+    return response;
+  } catch (error) {
+    console.error("❌ Vonage SMS Error:", error);
+    throw new Error(error?.message || "Failed to send SMS using Vonage");
+  }
 };
 
 module.exports = sendSMS;

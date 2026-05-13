@@ -17,52 +17,29 @@ const PORT = process.env.PORT || 5000;
 
 // ================= DEBUG LOGS =================
 console.log("SUPABASE URL:", process.env.SUPABASE_URL || "Missing");
+
 console.log(
   "SERVICE KEY:",
-  process.env.SUPABASE_SERVICE_ROLE_KEY ? "Loaded" : "Missing"
+  process.env.SUPABASE_SERVICE_ROLE_KEY ? "Loaded" : "Missing",
 );
+
 console.log(
   "OPENROUTER KEY:",
-  process.env.OPENROUTER_API_KEY ? "Loaded" : "Missing"
+  process.env.OPENROUTER_API_KEY ? "Loaded" : "Missing",
 );
 
-console.log("OVH APP KEY:", process.env.OVH_APP_KEY ? "Loaded" : "Missing");
-console.log("OVH SERVICE NAME:", process.env.OVH_SMS_SERVICE_NAME || "Missing");
-
-console.log("SMPP HOST:", process.env.SMPP_HOST || "Missing");
-console.log("SMPP PORT:", process.env.SMPP_PORT || "Missing");
+// ✅ Vonage Logs
 console.log(
-  "SMPP SYSTEM ID:",
-  process.env.SMPP_SYSTEM_ID ? "Loaded" : "Missing"
+  "VONAGE API KEY:",
+  process.env.VONAGE_API_KEY ? "Loaded" : "Missing",
 );
+
 console.log(
-  "SMPP PASSWORD:",
-  process.env.SMPP_PASSWORD ? "Loaded" : "Missing"
-);
-console.log("SMPP SOURCE ADDR:", process.env.SMPP_SOURCE_ADDR || "Missing");
-
-// ================= CORS =================
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://car-app-french.vercel.app",
-  process.env.CLIENT_URL,
-].filter(Boolean);
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`CORS not allowed for origin: ${origin}`));
-    },
-    credentials: true,
-  })
+  "VONAGE API SECRET:",
+  process.env.VONAGE_API_SECRET ? "Loaded" : "Missing",
 );
 
+console.log("VONAGE BRAND:", process.env.VONAGE_BRAND_NAME || "Missing");
 // ================= BODY PARSER =================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
