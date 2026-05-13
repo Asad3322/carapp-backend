@@ -15,6 +15,36 @@ const gamificationRouter = require("./Routes/gamificationRoutes");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ================= CORS =================
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://car-app-french.vercel.app",
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS not allowed: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-owner-access-token",
+      "owner-access-token",
+    ],
+  }),
+);
+
+// ================= BODY PARSER =================
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // ================= DEBUG LOGS =================
 console.log("SUPABASE URL:", process.env.SUPABASE_URL || "Missing");
 
@@ -28,7 +58,6 @@ console.log(
   process.env.OPENROUTER_API_KEY ? "Loaded" : "Missing",
 );
 
-// ✅ Vonage Logs
 console.log(
   "VONAGE API KEY:",
   process.env.VONAGE_API_KEY ? "Loaded" : "Missing",
@@ -40,9 +69,6 @@ console.log(
 );
 
 console.log("VONAGE BRAND:", process.env.VONAGE_BRAND_NAME || "Missing");
-// ================= BODY PARSER =================
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // ================= ROOT =================
 app.get("/", (req, res) => {
@@ -55,11 +81,7 @@ app.use("/users", userRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/vehicles", vehicleRouter);
 app.use("/api/ai", aiRouter);
-
-// Gamification
 app.use("/api/gamification", gamificationRouter);
-
-// ✅ FIXED SMS ROUTE
 app.use("/api/test-sms", testSmsRouter);
 
 // ================= 404 =================
