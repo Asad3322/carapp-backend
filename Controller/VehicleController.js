@@ -37,6 +37,18 @@ const getProfileIdFromAuthUserId = async (authUserId) => {
   return data?.id || null;
 };
 
+const getOwnerContext = async (req) => {
+  const ownerAuthId = req.user?.id || null;
+  const ownerProfileId =
+    req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+
+  return {
+    ownerAuthId,
+    ownerProfileId,
+    isOwnerAccess: Boolean(req.user?.isOwnerAccess),
+  };
+};
+
 const uploadVehicleFiles = async (files) => {
   const vehicleMediaUrls = [];
   const insuranceUrls = [];
@@ -62,24 +74,11 @@ const uploadVehicleFiles = async (files) => {
   return { vehicleMediaUrls, insuranceUrls };
 };
 
-const linkOldReportsToOwner = async ({
-  profileId,
-  vehicleId,
-  licencePlate,
-}) => {
+const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
   try {
-    if (!profileId || !vehicleId || !licencePlate) {
-      console.log("❌ Missing data for report linking:", {
-        profileId,
-        vehicleId,
-        licencePlate,
-      });
-      return;
-    }
+    if (!profileId || !vehicleId || !licencePlate) return;
 
     const normalizedPlate = normalizePlate(licencePlate);
-
-    console.log("🔗 Linking old reports for plate:", normalizedPlate);
 
     const { data, error } = await supabase
       .from("reports")
@@ -96,11 +95,11 @@ const linkOldReportsToOwner = async ({
       .select("*");
 
     if (error) {
-      console.error("❌ Auto-link old reports error:", error);
+      console.error("Auto-link old reports error:", error);
       return;
     }
 
-    console.log("✅ Old reports linked:", data?.length || 0);
+    console.log("Old reports linked:", data?.length || 0);
   } catch (error) {
     console.error("linkOldReportsToOwner error:", error);
   }
@@ -152,8 +151,6 @@ const createVehicleOnboarding = async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log("📦 CREATE ONBOARDING VEHICLE PAYLOAD:", payload);
-
     const { data, error } = await supabase
       .from("vehicles")
       .insert([payload])
@@ -188,23 +185,14 @@ const createVehicleOnboarding = async (req, res) => {
   }
 };
 
-// ================= CREATE VEHICLE AUTH USER =================
+// ================= CREATE VEHICLE AUTH / OWNER ACCESS =================
 const createVehicle = async (req, res) => {
   try {
     const { vehicleName, licencePlate } = req.body;
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
-
-    console.log("🚗 CREATE VEHICLE USER:", {
-      ownerAuthId,
-      ownerProfileId,
-      email: req.user?.email,
-      role: req.user?.role,
-    });
-
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -253,8 +241,6 @@ const createVehicle = async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    console.log("📦 CREATE VEHICLE PAYLOAD:", payload);
-
     const { data, error } = await supabase
       .from("vehicles")
       .insert([payload])
@@ -298,12 +284,10 @@ const createVehicle = async (req, res) => {
 const claimVehicle = async (req, res) => {
   try {
     const { licencePlate, vehicleId } = req.body;
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
-
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -396,11 +380,10 @@ const claimVehicle = async (req, res) => {
 // ================= GET ALL VEHICLES =================
 const getAllVehicles = async (req, res) => {
   try {
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -435,11 +418,10 @@ const getAllVehicles = async (req, res) => {
 // ================= GET SINGLE VEHICLE =================
 const getSingleVehicle = async (req, res) => {
   try {
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -470,13 +452,14 @@ const getSingleVehicle = async (req, res) => {
     return sendResponse(res, 500, false, "Failed to fetch vehicle");
   }
 };
+
+// ================= UPDATE VEHICLE =================
 const updateVehicle = async (req, res) => {
   try {
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
@@ -562,13 +545,13 @@ const updateVehicle = async (req, res) => {
   }
 };
 
+// ================= DELETE VEHICLE =================
 const deleteVehicle = async (req, res) => {
   try {
-    const ownerAuthId = req.user?.id || null;
-    const ownerProfileId =
-      req.user?.profileId || (await getProfileIdFromAuthUserId(ownerAuthId));
+    const { ownerAuthId, ownerProfileId, isOwnerAccess } =
+      await getOwnerContext(req);
 
-    if (!ownerAuthId) {
+    if (!ownerAuthId && !isOwnerAccess) {
       return sendResponse(res, 401, false, "Unauthorized");
     }
 
