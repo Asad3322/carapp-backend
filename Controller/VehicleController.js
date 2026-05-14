@@ -74,6 +74,28 @@ const uploadVehicleFiles = async (files) => {
   return { vehicleMediaUrls, insuranceUrls };
 };
 
+const findVehicleByPlate = async (normalizedPlate) => {
+  let result = await supabase
+    .from("vehicles")
+    .select("*")
+    .eq("normalized_plate", normalizedPlate)
+    .maybeSingle();
+
+  if (result.error && result.error.message?.includes("normalized_plate")) {
+    console.warn(
+      "normalized_plate column missing, falling back to licence_plate lookup",
+    );
+
+    result = await supabase
+      .from("vehicles")
+      .select("*")
+      .eq("licence_plate", normalizedPlate)
+      .maybeSingle();
+  }
+
+  return result;
+};
+
 const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
   try {
     if (!profileId || !vehicleId || !licencePlate) return;
@@ -90,7 +112,7 @@ const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => 
         status: "reported",
         updated_at: new Date().toISOString(),
       })
-      .eq("licence_plate", normalizedPlate)
+      .eq("normalized_plate", normalizedPlate)
       .is("receiver_id", null)
       .select("*");
 
@@ -121,11 +143,8 @@ const createVehicleOnboarding = async (req, res) => {
 
     const normalizedPlate = normalizePlate(licencePlate);
 
-    const { data: existingVehicle, error: findError } = await supabase
-      .from("vehicles")
-      .select("id, licence_plate")
-      .eq("licence_plate", normalizedPlate)
-      .maybeSingle();
+    const { data: existingVehicle, error: findError } =
+      await findVehicleByPlate(normalizedPlate);
 
     if (findError) {
       console.error("Supabase vehicle lookup error:", findError);
@@ -143,6 +162,7 @@ const createVehicleOnboarding = async (req, res) => {
     const payload = {
       vehicle_name: vehicleName.trim(),
       licence_plate: normalizedPlate,
+      normalized_plate: normalizedPlate,
       vehicle_media: vehicleMediaUrls,
       insurance_certificate: insuranceUrls,
       owner_id: null,
@@ -211,11 +231,8 @@ const createVehicle = async (req, res) => {
 
     const normalizedPlate = normalizePlate(licencePlate);
 
-    const { data: existingVehicle, error: findError } = await supabase
-      .from("vehicles")
-      .select("id, licence_plate")
-      .eq("licence_plate", normalizedPlate)
-      .maybeSingle();
+    const { data: existingVehicle, error: findError } =
+      await findVehicleByPlate(normalizedPlate);
 
     if (findError) {
       console.error("Supabase vehicle lookup error:", findError);
@@ -233,6 +250,7 @@ const createVehicle = async (req, res) => {
     const payload = {
       vehicle_name: vehicleName.trim(),
       licence_plate: normalizedPlate,
+      normalized_plate: normalizedPlate,
       vehicle_media: vehicleMediaUrls,
       insurance_certificate: insuranceUrls,
       owner_id: ownerProfileId,
@@ -304,15 +322,25 @@ const claimVehicle = async (req, res) => {
       );
     }
 
-    let findQuery = supabase.from("vehicles").select("*");
+    let vehicle = null;
+    let findError = null;
 
     if (vehicleId) {
-      findQuery = findQuery.eq("id", vehicleId);
-    } else {
-      findQuery = findQuery.eq("licence_plate", normalizePlate(licencePlate));
-    }
+      const result = await supabase
+        .from("vehicles")
+        .select("*")
+        .eq("id", vehicleId)
+        .maybeSingle();
 
-    const { data: vehicle, error: findError } = await findQuery.maybeSingle();
+      vehicle = result.data;
+      findError = result.error;
+    } else {
+      const normalizedPlate = normalizePlate(licencePlate);
+      const result = await findVehicleByPlate(normalizedPlate);
+
+      vehicle = result.data;
+      findError = result.error;
+    }
 
     if (findError) {
       console.error("Find vehicle before claim error:", findError);
@@ -332,10 +360,13 @@ const claimVehicle = async (req, res) => {
       );
     }
 
+    const normalizedPlate = normalizePlate(vehicle.licence_plate);
+
     const { data, error } = await supabase
       .from("vehicles")
       .update({
         owner_id: ownerProfileId,
+        normalized_plate: normalizedPlate,
         is_claimed: true,
         registration_source: "claimed_after_onboarding",
         updated_at: new Date().toISOString(),
@@ -493,22 +524,35 @@ const updateVehicle = async (req, res) => {
     if (licencePlate) {
       const normalizedPlate = normalizePlate(licencePlate);
 
-      const { data: duplicateVehicle, error: duplicateError } = await supabase
+      let duplicateResult = await supabase
         .from("vehicles")
         .select("id")
-        .eq("licence_plate", normalizedPlate)
+        .eq("normalized_plate", normalizedPlate)
         .neq("id", req.params.id)
         .maybeSingle();
 
-      if (duplicateError) {
-        return sendResponse(res, 500, false, duplicateError.message);
+      if (
+        duplicateResult.error &&
+        duplicateResult.error.message?.includes("normalized_plate")
+      ) {
+        duplicateResult = await supabase
+          .from("vehicles")
+          .select("id")
+          .eq("licence_plate", normalizedPlate)
+          .neq("id", req.params.id)
+          .maybeSingle();
       }
 
-      if (duplicateVehicle) {
+      if (duplicateResult.error) {
+        return sendResponse(res, 500, false, duplicateResult.error.message);
+      }
+
+      if (duplicateResult.data) {
         return sendResponse(res, 409, false, "Licence Plate already exists");
       }
 
       updatePayload.licence_plate = normalizedPlate;
+      updatePayload.normalized_plate = normalizedPlate;
     }
 
     if (vehicleMediaUrls.length > 0) {
@@ -530,6 +574,14 @@ const updateVehicle = async (req, res) => {
     if (error) {
       console.error("Update vehicle error:", error);
       return sendResponse(res, 500, false, error.message);
+    }
+
+    if (updatePayload.licence_plate) {
+      await linkOldReportsToOwner({
+        profileId: ownerProfileId,
+        vehicleId: data.id,
+        licencePlate: updatePayload.licence_plate,
+      });
     }
 
     return sendResponse(

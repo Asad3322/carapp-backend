@@ -3,7 +3,16 @@ const sendResponse = require("../Utils/sendResponse");
 const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
 
 const allowedUrgency = ["urgent", "medium", "not_urgent"];
-const allowedStatuses = ["reported", "seen", "resolved", "pending_registration"];
+const allowedStatuses = [
+  "reported",
+  "submitted",
+  "delivered",
+  "seen",
+  "acknowledged",
+  "resolved",
+  "closed",
+  "pending_registration",
+];
 
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
@@ -76,7 +85,7 @@ const updateGamification = async (profileId) => {
       const todayDate = new Date(today);
       const lastDate = new Date(lastReportDate);
       const diffDays = Math.floor(
-        (todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+        (todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
       );
 
       if (diffDays === 0) streak = streak || 1;
@@ -254,7 +263,7 @@ const autoSaveDraft = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Failed to auto-save draft"
+      error.message || "Failed to auto-save draft",
     );
   }
 };
@@ -277,7 +286,7 @@ const createReport = async (req, res) => {
         res,
         400,
         false,
-        "licencePlate, urgency and description are required"
+        "licencePlate, urgency and description are required",
       );
     }
 
@@ -295,7 +304,7 @@ const createReport = async (req, res) => {
     const { data: vehicle, error: vehicleError } = await supabase
       .from("vehicles")
       .select("id, owner_id, vehicle_name, licence_plate, vehicle_media")
-      .ilike("licence_plate", normalizedPlate)
+      .eq("normalized_plate", normalizedPlate)
       .maybeSingle();
 
     if (vehicleError) {
@@ -306,7 +315,9 @@ const createReport = async (req, res) => {
     if (vehicle) {
       vehicleName = vehicle.vehicle_name || null;
 
-      const validOwnerProfileId = await getValidOwnerProfileId(vehicle.owner_id);
+      const validOwnerProfileId = await getValidOwnerProfileId(
+        vehicle.owner_id,
+      );
 
       if (validOwnerProfileId) {
         receiverId = validOwnerProfileId;
@@ -340,7 +351,7 @@ const createReport = async (req, res) => {
         const url = await uploadFileToSupabase(
           file,
           "reports",
-          "insurance-documents"
+          "insurance-documents",
         );
         if (url) insuranceUrls.push(url);
       }
@@ -348,6 +359,7 @@ const createReport = async (req, res) => {
 
     const payload = {
       licence_plate: normalizedPlate,
+      normalized_plate: normalizedPlate,
       urgency,
       description: description.trim(),
       insurance_certificate: insuranceUrls,
@@ -425,7 +437,7 @@ const createReport = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Failed to create report"
+      error.message || "Failed to create report",
     );
   }
 };
@@ -515,7 +527,7 @@ const getSentReports = async (req, res) => {
         200,
         true,
         "Sent reports fetched successfully",
-        []
+        [],
       );
     }
 
@@ -535,7 +547,7 @@ const getSentReports = async (req, res) => {
       200,
       true,
       "Sent reports fetched successfully",
-      data
+      data,
     );
   } catch (error) {
     console.error("Get Sent Reports Error:", error);
@@ -562,7 +574,7 @@ const getReceivedReports = async (req, res) => {
         200,
         true,
         "Received reports fetched successfully",
-        []
+        [],
       );
     }
 
@@ -582,7 +594,7 @@ const getReceivedReports = async (req, res) => {
       200,
       true,
       "Received reports fetched successfully",
-      data
+      data,
     );
   } catch (error) {
     console.error("Get Received Reports Error:", error);
@@ -599,7 +611,7 @@ const updateReportStatus = async (req, res) => {
     const currentProfileId =
       req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
 
-    const currentUserRole = req.user?.role || null;
+    const currentUserRole = req.user?.profileRole || req.user?.role || null;
 
     if (!status) return sendResponse(res, 400, false, "Status is required");
 
@@ -614,7 +626,10 @@ const updateReportStatus = async (req, res) => {
       .maybeSingle();
 
     if (reportError || !report) {
-      console.error("Supabase get report for status update error:", reportError);
+      console.error(
+        "Supabase get report for status update error:",
+        reportError,
+      );
       return sendResponse(res, 404, false, "Report not found");
     }
 
@@ -635,7 +650,7 @@ const updateReportStatus = async (req, res) => {
         res,
         403,
         false,
-        "Only related user or admin can update report status"
+        "Only related user or admin can update report status",
       );
     }
 
@@ -643,6 +658,13 @@ const updateReportStatus = async (req, res) => {
       .from("reports")
       .update({
         status,
+        ...(status === "seen" ? { seen_at: new Date().toISOString() } : {}),
+        ...(status === "acknowledged"
+          ? { acknowledged_at: new Date().toISOString() }
+          : {}),
+        ...(status === "closed" || status === "resolved"
+          ? { closed_at: new Date().toISOString() }
+          : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -659,7 +681,7 @@ const updateReportStatus = async (req, res) => {
       200,
       true,
       "Report status updated successfully",
-      data
+      data,
     );
   } catch (error) {
     console.error("Update Report Status Error:", error);
