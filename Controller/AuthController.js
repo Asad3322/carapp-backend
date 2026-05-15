@@ -27,7 +27,7 @@ const createOwnerAccessToken = ({ profileId, phone }) => {
   };
 
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString(
-    "base64url"
+    "base64url",
   );
 
   const signature = crypto
@@ -75,7 +75,7 @@ const sendVerification = async (req, res) => {
       {
         ...result,
         verificationLink,
-      }
+      },
     );
   } catch (error) {
     console.error("❌ sendVerification error:", error);
@@ -83,13 +83,17 @@ const sendVerification = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Internal server error"
+      error.message || "Internal server error",
     );
   }
 };
 
 // ================= LINK OLD REPORTS TO OWNER =================
-const linkOldReportsToOwner = async ({ profileId, vehicleId, licencePlate }) => {
+const linkOldReportsToOwner = async ({
+  profileId,
+  vehicleId,
+  licencePlate,
+}) => {
   try {
     if (!profileId || !vehicleId || !licencePlate) return;
 
@@ -310,7 +314,7 @@ const verifyPhoneMagicLink = async (req, res) => {
       res,
       400,
       false,
-      error.message || "Invalid verification link"
+      error.message || "Invalid verification link",
     );
   }
 };
@@ -468,7 +472,86 @@ const createProfileAfterAuth = async (req, res) => {
       res,
       500,
       false,
-      error.message || "Something went wrong"
+      error.message || "Something went wrong",
+    );
+  }
+};
+
+const updateOwnerProfile = async (req, res) => {
+  try {
+    const { username, name, avatar_url, profileImage, phone, vehicleId } =
+      req.body;
+
+    const profileId = req.user?.profileId;
+
+    if (!profileId) {
+      return sendResponse(res, 401, false, "Unauthorized owner access");
+    }
+
+    const normalizedUsername = String(username || "")
+      .trim()
+      .toLowerCase();
+
+    if (!normalizedUsername) {
+      return sendResponse(res, 400, false, "Username required");
+    }
+
+    const { data: existingUsername, error: usernameError } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("username", normalizedUsername);
+
+    if (usernameError) {
+      return sendResponse(res, 500, false, usernameError.message);
+    }
+
+    const taken = (existingUsername || []).some(
+      (item) => item.id !== profileId,
+    );
+
+    if (taken) {
+      return sendResponse(res, 400, false, "Username already taken");
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .update({
+        username: normalizedUsername,
+        name: name || normalizedUsername,
+        avatar_url: avatar_url || profileImage || null,
+        phone: phone || null,
+        role: "vehicle_owner",
+        primary_contact: "SMS",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", profileId)
+      .select("*")
+      .single();
+
+    if (error) {
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    let claimedVehicle = null;
+
+    if (vehicleId) {
+      claimedVehicle = await claimVehicleForOwner({
+        profileId,
+        vehicleId,
+      });
+    }
+
+    return sendResponse(res, 200, true, "Owner profile updated successfully", {
+      profile,
+      vehicle: claimedVehicle,
+    });
+  } catch (error) {
+    console.error("updateOwnerProfile error:", error);
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Failed to update owner profile",
     );
   }
 };
@@ -477,4 +560,5 @@ module.exports = {
   sendVerification,
   verifyPhoneMagicLink,
   createProfileAfterAuth,
+  updateOwnerProfile,
 };

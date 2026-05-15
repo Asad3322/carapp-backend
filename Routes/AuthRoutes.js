@@ -8,6 +8,7 @@ const {
   sendVerification,
   verifyPhoneMagicLink,
   createProfileAfterAuth,
+  updateOwnerProfile,
 } = require("../Controller/AuthController");
 
 const supabase = require("../Config/supabaseClient");
@@ -21,8 +22,7 @@ const flexibleAuth = (req, res, next) => {
   }
 
   const ownerToken =
-    req.headers["x-owner-access-token"] ||
-    req.headers["owner-access-token"];
+    req.headers["x-owner-access-token"] || req.headers["owner-access-token"];
 
   if (ownerToken) {
     return ownerAccessMiddleware(req, res, next);
@@ -34,6 +34,7 @@ const flexibleAuth = (req, res, next) => {
 router.post("/send-verification", sendVerification);
 router.get("/verify-phone-link", verifyPhoneMagicLink);
 router.post("/create-profile", authMiddleware, createProfileAfterAuth);
+router.patch("/owner-profile", ownerAccessMiddleware, updateOwnerProfile);
 
 router.get("/me", flexibleAuth, async (req, res) => {
   try {
