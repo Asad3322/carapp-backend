@@ -1,5 +1,6 @@
 const supabase = require("../Config/supabaseClient");
 const crypto = require("crypto");
+const sendSMS = require("../Utils/sendSMS");
 
 // ================= NORMALIZERS =================
 const normalizeEmail = (email = "") => email.trim().toLowerCase();
@@ -21,9 +22,7 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
 
   const isEmail = cleanedContact.includes("@");
 
-  // ====================================================
-  // 🟦 REPORTER FLOW (EMAIL)
-  // ====================================================
+  // REPORTER FLOW
   if (normalizedRole === "reporter") {
     if (!isEmail) {
       throw new Error("Reporter verification requires an email address");
@@ -34,7 +33,7 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${process.env.CLIENT_URL}/verify`,
+        emailRedirectTo: `${process.env.CLIENT_URL}/auth/callback?from=report`,
         data: {
           role: "reporter",
         },
@@ -53,9 +52,7 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
     };
   }
 
-  // ====================================================
-  // 🟩 VEHICLE OWNER FLOW (PHONE)
-  // ====================================================
+  // VEHICLE OWNER FLOW
   if (normalizedRole === "vehicle_owner") {
     if (!vehicleId) {
       throw new Error("Vehicle ID is required for owner verification");
@@ -87,9 +84,17 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
       throw new Error(insertError.message);
     }
 
-    const magicLink = `${process.env.CLIENT_URL}/auth/callback?phone_token=${token}`;
+    const frontendUrl =
+      process.env.CLIENT_URL || "https://car-app-french.vercel.app";
 
-    console.log("🔗 MOCK PHONE VERIFICATION LINK:", magicLink);
+    const magicLink = `${frontendUrl}/auth/callback?phone_token=${token}`;
+
+    console.log("🔗 PHONE VERIFICATION LINK:", magicLink);
+
+    await sendSMS({
+      to: phone,
+      message: `CARAPP verification link: ${magicLink}`,
+    });
 
     return {
       contact: phone,
@@ -101,9 +106,6 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
     };
   }
 
-  // ====================================================
-  // ❌ INVALID ROLE
-  // ====================================================
   throw new Error("Invalid role provided");
 };
 
@@ -153,7 +155,6 @@ const verifyPhoneMagicLinkService = async (token) => {
     throw new Error("Verification link expired");
   }
 
-  // mark as used
   const { error: markUsedError } = await supabase
     .from("phone_verifications")
     .update({ is_used: true })
