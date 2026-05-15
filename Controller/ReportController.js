@@ -607,17 +607,27 @@ const updateReportStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const authUserId = req.user?.id || req.body.userId || null;
+    const allowedUpdateStatuses = ["seen", "resolved"];
+
+    if (!status) {
+      return sendResponse(res, 400, false, "Status is required");
+    }
+
+    if (!allowedUpdateStatuses.includes(status)) {
+      return sendResponse(
+        res,
+        400,
+        false,
+        "Only seen or resolved status is allowed",
+      );
+    }
+
+    const authUserId = req.user?.id || null;
+
     const currentProfileId =
       req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
 
     const currentUserRole = req.user?.profileRole || req.user?.role || null;
-
-    if (!status) return sendResponse(res, 400, false, "Status is required");
-
-    if (!allowedStatuses.includes(status)) {
-      return sendResponse(res, 400, false, "Invalid status value");
-    }
 
     const { data: report, error: reportError } = await supabase
       .from("reports")
@@ -638,35 +648,29 @@ const updateReportStatus = async (req, res) => {
       currentProfileId &&
       report.receiver_id === currentProfileId;
 
-    const isReporter =
-      report.reporter_id &&
-      currentProfileId &&
-      report.reporter_id === currentProfileId;
-
     const isAdmin = currentUserRole === "admin";
 
-    if (!isOwner && !isReporter && !isAdmin) {
+    if (!isOwner && !isAdmin) {
       return sendResponse(
         res,
         403,
         false,
-        "Only related user or admin can update report status",
+        "Only vehicle owner or admin can update report status",
       );
     }
 
+    const now = new Date().toISOString();
+
+    const updatePayload = {
+      status,
+      updated_at: now,
+      ...(status === "seen" ? { seen_at: now } : {}),
+      ...(status === "resolved" ? { closed_at: now } : {}),
+    };
+
     const { data, error } = await supabase
       .from("reports")
-      .update({
-        status,
-        ...(status === "seen" ? { seen_at: new Date().toISOString() } : {}),
-        ...(status === "acknowledged"
-          ? { acknowledged_at: new Date().toISOString() }
-          : {}),
-        ...(status === "closed" || status === "resolved"
-          ? { closed_at: new Date().toISOString() }
-          : {}),
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", id)
       .select()
       .single();
