@@ -601,6 +601,195 @@ const getReceivedReports = async (req, res) => {
     return sendResponse(res, 500, false, "Failed to fetch received reports");
   }
 };
+const thankReporter = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const authUserId = req.user?.id || null;
+    const currentProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
+
+    const currentUserRole = req.user?.profileRole || req.user?.role || null;
+
+    const { data: report, error: reportError } = await supabase
+      .from("reports")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (reportError || !report) {
+      return sendResponse(res, 404, false, "Report not found");
+    }
+
+    const isOwner =
+      report.receiver_id &&
+      currentProfileId &&
+      report.receiver_id === currentProfileId;
+
+    const isAdmin = currentUserRole === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return sendResponse(
+        res,
+        403,
+        false,
+        "Only vehicle owner or admin can thank reporter",
+      );
+    }
+
+    if (report.status === "acknowledged") {
+      return sendResponse(res, 200, true, "Reporter already thanked", report);
+    }
+
+    const now = new Date().toISOString();
+
+    let reward = null;
+
+    if (report.reporter_id) {
+      const { data: reporterProfile, error: reporterError } = await supabase
+        .from("profiles")
+        .select("coins, points, badges")
+        .eq("id", report.reporter_id)
+        .maybeSingle();
+
+      if (!reporterError && reporterProfile) {
+        const coins = Number(reporterProfile.coins || 0) + 10;
+        const points = Number(reporterProfile.points || 0) + 10;
+        const badges = Array.isArray(reporterProfile.badges)
+          ? reporterProfile.badges
+          : [];
+
+        if (!badges.includes("Helpful Reporter")) {
+          badges.push("Helpful Reporter");
+        }
+
+        const { error: rewardError } = await supabase
+          .from("profiles")
+          .update({
+            coins,
+            points,
+            badges,
+            updated_at: now,
+          })
+          .eq("id", report.reporter_id);
+
+        if (rewardError) {
+          console.error("Thank reward update error:", rewardError);
+        } else {
+          reward = {
+            coinsAdded: 10,
+            pointsAdded: 10,
+            badge: "Helpful Reporter",
+            coins,
+            points,
+            badges,
+          };
+        }
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("reports")
+      .update({
+        status: "acknowledged",
+        acknowledged_at: now,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Thank report update error:", error);
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    if (report.reporter_id) {
+      await createNotification({
+        userId: report.reporter_id,
+        type: "report_thanked",
+        title: "You were thanked",
+        message:
+          "A vehicle owner thanked you for your report and sent you coins.",
+        reportId: id,
+      });
+    }
+
+    return sendResponse(res, 200, true, "Reporter thanked successfully", {
+      ...data,
+      reward,
+    });
+  } catch (error) {
+    console.error("Thank Reporter Error:", error);
+    return sendResponse(res, 500, false, "Failed to thank reporter");
+  }
+};
+
+const reportBadReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const authUserId = req.user?.id || null;
+    const currentProfileId =
+      req.user?.profileId || (await getProfileIdFromAuthUserId(authUserId));
+
+    const currentUserRole = req.user?.profileRole || req.user?.role || null;
+
+    const { data: report, error: reportError } = await supabase
+      .from("reports")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (reportError || !report) {
+      return sendResponse(res, 404, false, "Report not found");
+    }
+
+    const isOwner =
+      report.receiver_id &&
+      currentProfileId &&
+      report.receiver_id === currentProfileId;
+
+    const isReporter =
+      report.reporter_id &&
+      currentProfileId &&
+      report.reporter_id === currentProfileId;
+
+    const isAdmin = currentUserRole === "admin";
+
+    if (!isOwner && !isReporter && !isAdmin) {
+      return sendResponse(
+        res,
+        403,
+        false,
+        "Only related user or admin can close this report",
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from("reports")
+      .update({
+        status: "closed",
+        closed_at: now,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Bad report update error:", error);
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    return sendResponse(res, 200, true, "Report closed successfully", data);
+  } catch (error) {
+    console.error("Bad Report Error:", error);
+    return sendResponse(res, 500, false, "Failed to close report");
+  }
+};
 
 const updateReportStatus = async (req, res) => {
   try {
@@ -700,5 +889,7 @@ module.exports = {
   getSentReports,
   getReceivedReports,
   updateReportStatus,
+  thankReporter,
+  reportBadReport,
   autoSaveDraft,
 };

@@ -41,6 +41,18 @@ router.get("/sent", flexibleReportAuth, ReportController.getSentReports);
 
 router.get("/received", flexibleReportAuth, ReportController.getReceivedReports);
 
+router.patch(
+  "/:id/thank",
+  flexibleReportAuth,
+  ReportController.thankReporter
+);
+
+router.patch(
+  "/:id/bad-report",
+  flexibleReportAuth,
+  ReportController.reportBadReport
+);
+
 router.get("/:id", flexibleReportAuth, ReportController.getSingleReport);
 
 router.patch(
