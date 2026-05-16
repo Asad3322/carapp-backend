@@ -515,17 +515,26 @@ const updateOwnerProfile = async (req, res) => {
       return sendResponse(res, 400, false, "Username already taken");
     }
 
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .update({
-        username: normalizedUsername,
-        name: name || normalizedUsername,
-        avatar_url: avatar_url || profileImage || null,
-        phone: phone || null,
-        role: "vehicle_owner",
-        primary_contact: "SMS",
-        updated_at: new Date().toISOString(),
-      })
+    const { data: existingProfile } = await supabase
+  .from("profiles")
+  .select("*")
+  .eq("id", profileId)
+  .single();
+
+const isOwner =
+  existingProfile?.role === "vehicle_owner";
+
+const { data: profile, error } = await supabase
+  .from("profiles")
+  .update({
+    username: normalizedUsername,
+    name: name || normalizedUsername,
+    avatar_url: avatar_url || profileImage || null,
+    phone: phone || existingProfile?.phone || null,
+    role: existingProfile?.role || "reporter",
+    primary_contact: isOwner ? "SMS" : "Email",
+    updated_at: new Date().toISOString(),
+  })
       .eq("id", profileId)
       .select("*")
       .single();
