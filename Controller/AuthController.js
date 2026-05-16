@@ -239,6 +239,7 @@ const verifyPhoneMagicLink = async (req, res) => {
     }
 
     let profile = existingProfile;
+    const isNewOwner = !existingProfile;
 
     if (!profile) {
       const username = `owner_${phone.replace(/\D/g, "").slice(-6)}`;
@@ -287,7 +288,7 @@ const verifyPhoneMagicLink = async (req, res) => {
 
     let claimedVehicle = null;
 
-    if (vehicleId) {
+    if (vehicleId && !isNewOwner) {
       claimedVehicle = await claimVehicleForOwner({
         profileId: profile.id,
         vehicleId,
@@ -306,6 +307,7 @@ const verifyPhoneMagicLink = async (req, res) => {
       profile,
       vehicle: claimedVehicle,
       ownerAccessToken,
+      needsCompleteProfile: isNewOwner,
     });
   } catch (error) {
     console.error("verifyPhoneMagicLink error:", error);
