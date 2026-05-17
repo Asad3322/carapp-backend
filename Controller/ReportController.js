@@ -1,8 +1,10 @@
 const supabase = require("../Config/supabaseClient");
 const sendResponse = require("../Utils/sendResponse");
 const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
+const sendSMS = require("../Utils/sendSMS");
 
 const allowedUrgency = ["urgent", "medium", "not_urgent"];
+
 const allowedStatuses = [
   "reported",
   "submitted",
@@ -207,6 +209,58 @@ const getValidOwnerProfileId = async (ownerId) => {
   return data?.id || null;
 };
 
+const getOwnerProfileForSms = async (ownerId) => {
+  if (!ownerId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, name, phone")
+    .eq("id", ownerId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Owner SMS profile lookup error:", error);
+    return null;
+  }
+
+  return data || null;
+};
+
+const sendOwnerReportSms = async ({ ownerProfile, reportId, plate }) => {
+  try {
+    const ownerPhone = ownerProfile?.phone;
+
+    if (!ownerPhone) {
+      console.log("⚠️ Owner phone missing. SMS skipped.");
+      return false;
+    }
+
+    const frontendUrl =
+      process.env.CLIENT_URL || "https://car-app-french.vercel.app";
+
+    const reportLink = `${frontendUrl}/app/history/${reportId}`;
+
+    const message = `CARAPP: New incident reported for your vehicle ${plate}. View details: ${reportLink}`;
+
+    await sendSMS({
+      to: ownerPhone,
+      message,
+    });
+
+    console.log("✅ Owner incident SMS sent:", {
+      ownerId: ownerProfile.id,
+      phone: ownerPhone,
+      reportId,
+      plate,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("❌ Owner incident SMS failed:", error.message);
+    return false;
+  }
+};
+
 const autoSaveDraft = async (req, res) => {
   try {
     const { anonymousUserId, licencePlate, urgency, description } = req.body;
@@ -300,6 +354,7 @@ const createReport = async (req, res) => {
     let receiverId = null;
     let vehicleName = null;
     let ownerFound = false;
+    let ownerProfileForSms = null;
 
     const { data: vehicle, error: vehicleError } = await supabase
       .from("vehicles")
@@ -323,6 +378,7 @@ const createReport = async (req, res) => {
         receiverId = validOwnerProfileId;
         vehicleId = vehicle.id;
         ownerFound = true;
+        ownerProfileForSms = await getOwnerProfileForSms(validOwnerProfileId);
       } else {
         console.log("⚠️ Vehicle exists but valid owner profile not found:", {
           plate: normalizedPlate,
@@ -396,6 +452,28 @@ const createReport = async (req, res) => {
         message: `A report was submitted for your plate ${normalizedPlate}`,
         reportId: data.id,
       });
+
+      const smsSent = await sendOwnerReportSms({
+        ownerProfile: ownerProfileForSms,
+        reportId: data.id,
+        plate: normalizedPlate,
+      });
+
+      if (smsSent) {
+        const { error: deliveredError } = await supabase
+          .from("reports")
+          .update({
+            status: "delivered",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", data.id);
+
+        if (deliveredError) {
+          console.error("Report delivered status update error:", deliveredError);
+        } else {
+          data.status = "delivered";
+        }
+      }
     }
 
     const { data: admins, error: adminsError } = await supabase
@@ -601,6 +679,7 @@ const getReceivedReports = async (req, res) => {
     return sendResponse(res, 500, false, "Failed to fetch received reports");
   }
 };
+
 const thankReporter = async (req, res) => {
   try {
     const { id } = req.params;
