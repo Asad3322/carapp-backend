@@ -214,6 +214,93 @@ const claimVehicleForOwner = async ({ profileId, vehicleId }) => {
   return claimedVehicle;
 };
 
+// ================= MERGE OLD PROFILE DATA =================
+const mergeProfilesData = async ({ currentProfileId, email, phone }) => {
+  try {
+    if (!currentProfileId) return;
+
+    // Reporter adds phone → move old owner vehicles + received reports
+    if (phone) {
+      const { data: phoneProfile, error: phoneProfileError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("phone", phone)
+        .neq("id", currentProfileId)
+        .maybeSingle();
+
+      if (phoneProfileError) {
+        console.error("merge phone profile lookup error:", phoneProfileError);
+      }
+
+      if (phoneProfile?.id) {
+        console.log("🔄 MERGING OWNER DATA INTO CURRENT PROFILE:", {
+          from: phoneProfile.id,
+          to: currentProfileId,
+        });
+
+        const { error: vehicleMergeError } = await supabase
+          .from("vehicles")
+          .update({
+            owner_id: currentProfileId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("owner_id", phoneProfile.id);
+
+        if (vehicleMergeError) {
+          console.error("merge vehicles error:", vehicleMergeError);
+        }
+
+        const { error: receivedMergeError } = await supabase
+          .from("reports")
+          .update({
+            receiver_id: currentProfileId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("receiver_id", phoneProfile.id);
+
+        if (receivedMergeError) {
+          console.error("merge received reports error:", receivedMergeError);
+        }
+      }
+    }
+
+    // Owner adds email → move old reporter sent reports
+    if (email) {
+      const { data: emailProfile, error: emailProfileError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("email", email)
+        .neq("id", currentProfileId)
+        .maybeSingle();
+
+      if (emailProfileError) {
+        console.error("merge email profile lookup error:", emailProfileError);
+      }
+
+      if (emailProfile?.id) {
+        console.log("🔄 MERGING REPORTER DATA INTO CURRENT PROFILE:", {
+          from: emailProfile.id,
+          to: currentProfileId,
+        });
+
+        const { error: sentMergeError } = await supabase
+          .from("reports")
+          .update({
+            reporter_id: currentProfileId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("reporter_id", emailProfile.id);
+
+        if (sentMergeError) {
+          console.error("merge sent reports error:", sentMergeError);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("mergeProfilesData error:", error);
+  }
+};
+
 // ================= VERIFY PHONE LINK =================
 const verifyPhoneMagicLink = async (req, res) => {
   try {
@@ -408,6 +495,12 @@ const createProfileAfterAuth = async (req, res) => {
         });
       }
 
+      await mergeProfilesData({
+        currentProfileId: existingProfile.id,
+        email: finalEmail,
+        phone: finalPhone,
+      });
+
       return sendResponse(res, 200, true, "Profile updated successfully", {
         profile: updatedProfile,
         vehicle: claimedVehicle,
@@ -463,6 +556,12 @@ const createProfileAfterAuth = async (req, res) => {
       });
     }
 
+    await mergeProfilesData({
+      currentProfileId: createdProfile.id,
+      email: finalEmail,
+      phone: finalPhone,
+    });
+
     return sendResponse(res, 201, true, "Profile created successfully", {
       profile: createdProfile,
       vehicle: claimedVehicle,
@@ -515,26 +614,26 @@ const updateOwnerProfile = async (req, res) => {
       return sendResponse(res, 400, false, "Username already taken");
     }
 
-    const { data: existingProfile } = await supabase
-  .from("profiles")
-  .select("*")
-  .eq("id", profileId)
-  .single();
+    const { data: existingProfile, error: existingProfileError } =
+      await supabase.from("profiles").select("*").eq("id", profileId).single();
 
-const isOwner =
-  existingProfile?.role === "vehicle_owner";
+    if (existingProfileError) {
+      return sendResponse(res, 500, false, existingProfileError.message);
+    }
 
-const { data: profile, error } = await supabase
-  .from("profiles")
-  .update({
-    username: normalizedUsername,
-    name: name || normalizedUsername,
-    avatar_url: avatar_url || profileImage || null,
-    phone: phone || existingProfile?.phone || null,
-    role: existingProfile?.role || "reporter",
-    primary_contact: isOwner ? "SMS" : "Email",
-    updated_at: new Date().toISOString(),
-  })
+    const isOwner = existingProfile?.role === "vehicle_owner";
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .update({
+        username: normalizedUsername,
+        name: name || normalizedUsername,
+        avatar_url: avatar_url || profileImage || existingProfile?.avatar_url || null,
+        phone: phone || existingProfile?.phone || null,
+        role: existingProfile?.role || "reporter",
+        primary_contact: isOwner ? "SMS" : "Email",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", profileId)
       .select("*")
       .single();
@@ -551,6 +650,12 @@ const { data: profile, error } = await supabase
         vehicleId,
       });
     }
+
+    await mergeProfilesData({
+      currentProfileId: profileId,
+      email: profile?.email,
+      phone: profile?.phone,
+    });
 
     return sendResponse(res, 200, true, "Owner profile updated successfully", {
       profile,
