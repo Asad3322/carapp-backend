@@ -314,6 +314,7 @@ const verifyPhoneMagicLink = async (req, res) => {
 
     const phone = verification.phone;
     const vehicleId = verification.vehicle_id;
+    const reportId = verification.report_id || "";
 
     let { data: existingProfile, error: profileError } = await supabase
       .from("profiles")
@@ -391,6 +392,7 @@ const verifyPhoneMagicLink = async (req, res) => {
       phone,
       role: "vehicle_owner",
       vehicleId,
+      reportId,
       profile,
       vehicle: claimedVehicle,
       ownerAccessToken,
@@ -628,7 +630,8 @@ const updateOwnerProfile = async (req, res) => {
       .update({
         username: normalizedUsername,
         name: name || normalizedUsername,
-        avatar_url: avatar_url || profileImage || existingProfile?.avatar_url || null,
+        avatar_url:
+          avatar_url || profileImage || existingProfile?.avatar_url || null,
         phone: phone || existingProfile?.phone || null,
         role: existingProfile?.role || "reporter",
         primary_contact: isOwner ? "SMS" : "Email",

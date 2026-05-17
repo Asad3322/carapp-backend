@@ -75,6 +75,7 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
           token,
           role: "vehicle_owner",
           vehicle_id: vehicleId,
+          report_id: null,
           expires_at: expiresAt,
           is_used: false,
         },
@@ -107,6 +108,61 @@ const sendVerificationService = async ({ contact, role, vehicleId = null }) => {
   }
 
   throw new Error("Invalid role provided");
+};
+
+// ================= OWNER REPORT MAGIC LINK =================
+// Used when a registered vehicle receives a new report.
+// This creates a fresh one-time SMS login link that opens the incident detail screen.
+const createOwnerReportMagicLinkService = async ({
+  phone,
+  reportId,
+  vehicleId = null,
+}) => {
+  if (!phone) {
+    throw new Error("Owner phone is required");
+  }
+
+  if (!reportId) {
+    throw new Error("Report ID is required");
+  }
+
+  const normalizedPhone = normalizePhone(phone);
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  const { error: insertError } = await supabase
+    .from("phone_verifications")
+    .insert([
+      {
+        phone: normalizedPhone,
+        token,
+        role: "vehicle_owner",
+        vehicle_id: vehicleId || null,
+        report_id: reportId,
+        expires_at: expiresAt,
+        is_used: false,
+      },
+    ]);
+
+  if (insertError) {
+    throw new Error(insertError.message);
+  }
+
+  const frontendUrl =
+    process.env.CLIENT_URL || "https://car-app-french.vercel.app";
+
+  const magicLink = `${frontendUrl}/auth/callback?phone_token=${token}&reportId=${reportId}&from=owner_report`;
+
+  console.log("🔗 OWNER REPORT MAGIC LINK:", magicLink);
+
+  return {
+    phone: normalizedPhone,
+    role: "vehicle_owner",
+    channel: "sms",
+    expiresAt,
+    phone_token: token,
+    magicLink,
+  };
 };
 
 // ================= GET USER =================
@@ -171,4 +227,5 @@ module.exports = {
   sendVerificationService,
   getUserByContactService,
   verifyPhoneMagicLinkService,
+  createOwnerReportMagicLinkService,
 };

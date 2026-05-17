@@ -1,3 +1,4 @@
+const { createOwnerReportMagicLinkService } = require("../Service/AuthService");
 const supabase = require("../Config/supabaseClient");
 const sendResponse = require("../Utils/sendResponse");
 const uploadFileToSupabase = require("../Utils/uploadFileToSupabase");
@@ -235,10 +236,12 @@ const sendOwnerReportSms = async ({ ownerProfile, reportId, plate }) => {
       return false;
     }
 
-    const frontendUrl =
-      process.env.CLIENT_URL || "https://car-app-french.vercel.app";
+    const magicLinkData = await createOwnerReportMagicLinkService({
+      phone: ownerPhone,
+      reportId,
+    });
 
-    const reportLink = `${frontendUrl}/app/history/${reportId}`;
+    const reportLink = magicLinkData.magicLink;
 
     const message = `CARAPP: New incident reported for your vehicle ${plate}. View details: ${reportLink}`;
 
@@ -469,7 +472,10 @@ const createReport = async (req, res) => {
           .eq("id", data.id);
 
         if (deliveredError) {
-          console.error("Report delivered status update error:", deliveredError);
+          console.error(
+            "Report delivered status update error:",
+            deliveredError,
+          );
         } else {
           data.status = "delivered";
         }
