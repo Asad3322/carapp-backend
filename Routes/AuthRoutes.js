@@ -9,6 +9,8 @@ const {
   verifyPhoneMagicLink,
   createProfileAfterAuth,
   updateOwnerProfile,
+  sendPhoneOtp,
+  verifyPhoneOtp,
 } = require("../Controller/AuthController");
 
 const supabase = require("../Config/supabaseClient");
@@ -22,7 +24,8 @@ const flexibleAuth = (req, res, next) => {
   }
 
   const ownerToken =
-    req.headers["x-owner-access-token"] || req.headers["owner-access-token"];
+    req.headers["x-owner-access-token"] ||
+    req.headers["owner-access-token"];
 
   if (ownerToken) {
     return ownerAccessMiddleware(req, res, next);
@@ -31,11 +34,24 @@ const flexibleAuth = (req, res, next) => {
   return authMiddleware(req, res, next);
 };
 
+// ================= MAIN AUTH =================
 router.post("/send-verification", sendVerification);
 router.get("/verify-phone-link", verifyPhoneMagicLink);
-router.post("/create-profile", authMiddleware, createProfileAfterAuth);
-router.patch("/owner-profile", ownerAccessMiddleware, updateOwnerProfile);
 
+router.post("/create-profile", authMiddleware, createProfileAfterAuth);
+
+router.patch(
+  "/owner-profile",
+  ownerAccessMiddleware,
+  updateOwnerProfile,
+);
+
+// ================= REAL PHONE OTP =================
+router.post("/send-phone-otp", flexibleAuth, sendPhoneOtp);
+
+router.post("/verify-phone-otp", flexibleAuth, verifyPhoneOtp);
+
+// ================= GET CURRENT USER =================
 router.get("/me", flexibleAuth, async (req, res) => {
   try {
     let query = supabase.from("profiles").select("*");

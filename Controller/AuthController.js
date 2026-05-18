@@ -5,6 +5,7 @@ const {
 
 const sendResponse = require("../Utils/sendResponse");
 const supabase = require("../Config/supabaseClient");
+const sendSMS = require("../Utils/sendSMS");
 const crypto = require("crypto");
 
 const FRONTEND_URL =
@@ -17,6 +18,34 @@ const OWNER_ACCESS_SECRET =
 
 const normalizePlate = (value = "") =>
   String(value).replace(/\s+/g, "").trim().toUpperCase();
+
+const normalizePhone = (value = "") => String(value).replace(/\s+/g, "").trim();
+
+const generateOtp = () =>
+  Math.floor(100000 + Math.random() * 900000).toString();
+
+const getProfileIdFromAuthUserId = async (authUserId) => {
+  if (!authUserId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getProfileIdFromAuthUserId error:", error);
+    return null;
+  }
+
+  return data?.id || null;
+};
+
+const getCurrentProfileId = async (req) => {
+  if (req.user?.profileId) return req.user.profileId;
+  if (req.user?.isOwnerAccess && req.user?.profileId) return req.user.profileId;
+  return await getProfileIdFromAuthUserId(req.user?.id);
+};
 
 const createOwnerAccessToken = ({ profileId, phone }) => {
   const payload = {
@@ -84,6 +113,138 @@ const sendVerification = async (req, res) => {
       500,
       false,
       error.message || "Internal server error",
+    );
+  }
+};
+
+// ================= SEND REAL PHONE OTP =================
+const sendPhoneOtp = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    const profileId = await getCurrentProfileId(req);
+
+    if (!profileId) {
+      return sendResponse(res, 401, false, "Profile not found");
+    }
+
+    if (!phone || phone.trim().length < 5) {
+      return sendResponse(res, 400, false, "Valid phone number is required");
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    const otp = generateOtp();
+
+    await supabase
+      .from("phone_otps")
+      .update({ is_used: true })
+      .eq("profile_id", profileId)
+      .eq("phone", normalizedPhone)
+      .eq("is_used", false);
+
+    const { error } = await supabase.from("phone_otps").insert([
+      {
+        profile_id: profileId,
+        phone: normalizedPhone,
+        otp,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      },
+    ]);
+
+    if (error) {
+      return sendResponse(res, 500, false, error.message);
+    }
+
+    await sendSMS({
+      to: normalizedPhone,
+      message: `CARAPP: Your verification code is ${otp}. It expires in 5 minutes.`,
+    });
+
+    return sendResponse(res, 200, true, "OTP sent successfully");
+  } catch (error) {
+    console.error("sendPhoneOtp error:", error);
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Failed to send OTP",
+    );
+  }
+};
+
+// ================= VERIFY REAL PHONE OTP =================
+const verifyPhoneOtp = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    const profileId = await getCurrentProfileId(req);
+
+    if (!profileId) {
+      return sendResponse(res, 401, false, "Profile not found");
+    }
+
+    if (!phone || !otp) {
+      return sendResponse(res, 400, false, "Phone and OTP are required");
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+
+    const { data: otpRow, error: otpError } = await supabase
+      .from("phone_otps")
+      .select("*")
+      .eq("profile_id", profileId)
+      .eq("phone", normalizedPhone)
+      .eq("otp", otp)
+      .eq("is_used", false)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (otpError) {
+      return sendResponse(res, 500, false, otpError.message);
+    }
+
+    if (!otpRow) {
+      return sendResponse(res, 400, false, "Invalid or expired OTP");
+    }
+
+    await supabase
+      .from("phone_otps")
+      .update({ is_used: true })
+      .eq("id", otpRow.id);
+
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        phone: normalizedPhone,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", profileId)
+      .select("*")
+      .maybeSingle();
+
+    if (updateError) {
+      return sendResponse(res, 500, false, updateError.message);
+    }
+
+    await mergeProfilesData({
+      currentProfileId: profileId,
+      email: null,
+      phone: normalizedPhone,
+    });
+
+    return sendResponse(res, 200, true, "Phone verified successfully", {
+      profile: updatedProfile,
+      phone: normalizedPhone,
+    });
+  } catch (error) {
+    console.error("verifyPhoneOtp error:", error);
+    return sendResponse(
+      res,
+      500,
+      false,
+      error.message || "Failed to verify OTP",
     );
   }
 };
@@ -219,7 +380,6 @@ const mergeProfilesData = async ({ currentProfileId, email, phone }) => {
   try {
     if (!currentProfileId) return;
 
-    // Reporter adds phone → move old owner vehicles + received reports
     if (phone) {
       const { data: phoneProfile, error: phoneProfileError } = await supabase
         .from("profiles")
@@ -264,7 +424,6 @@ const mergeProfilesData = async ({ currentProfileId, email, phone }) => {
       }
     }
 
-    // Owner adds email → move old reporter sent reports
     if (email) {
       const { data: emailProfile, error: emailProfileError } = await supabase
         .from("profiles")
@@ -426,7 +585,6 @@ const createProfileAfterAuth = async (req, res) => {
       username,
       name,
       email: bodyEmail,
-      phone: bodyPhone,
       profileImage,
       avatar_url,
       pendingReportId,
@@ -435,7 +593,10 @@ const createProfileAfterAuth = async (req, res) => {
 
     const finalRole = role === "vehicle_owner" ? "vehicle_owner" : "reporter";
     const finalEmail = authUser.email || bodyEmail || null;
-    const finalPhone = verifiedPhone || bodyPhone || authUser.phone || null;
+
+    // SECURITY: body phone is not trusted anymore.
+    // Phone must be verified via /verify-phone-otp before merging vehicles.
+    const finalPhone = verifiedPhone || authUser.phone || null;
 
     const { data: existingProfile, error: profileFindError } = await supabase
       .from("profiles")
@@ -582,7 +743,7 @@ const createProfileAfterAuth = async (req, res) => {
 
 const updateOwnerProfile = async (req, res) => {
   try {
-    const { username, name, avatar_url, profileImage, phone, vehicleId } =
+    const { username, name, email, avatar_url, profileImage, phone, vehicleId } =
       req.body;
 
     const profileId = req.user?.profileId;
@@ -630,6 +791,7 @@ const updateOwnerProfile = async (req, res) => {
       .update({
         username: normalizedUsername,
         name: name || normalizedUsername,
+        email: email || existingProfile?.email || null,
         avatar_url:
           avatar_url || profileImage || existingProfile?.avatar_url || null,
         phone: phone || existingProfile?.phone || null,
@@ -657,7 +819,7 @@ const updateOwnerProfile = async (req, res) => {
     await mergeProfilesData({
       currentProfileId: profileId,
       email: profile?.email,
-      phone: profile?.phone,
+      phone: null,
     });
 
     return sendResponse(res, 200, true, "Owner profile updated successfully", {
@@ -680,4 +842,6 @@ module.exports = {
   verifyPhoneMagicLink,
   createProfileAfterAuth,
   updateOwnerProfile,
+  sendPhoneOtp,
+  verifyPhoneOtp,
 };
