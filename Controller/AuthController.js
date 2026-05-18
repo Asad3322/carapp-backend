@@ -313,7 +313,7 @@ const verifyPhoneMagicLink = async (req, res) => {
     const verification = await verifyPhoneMagicLinkService(phone_token);
 
     const phone = verification.phone;
-    const vehicleId = verification.vehicle_id;
+    const vehicleId = verification.vehicle_id || "";
     const reportId = verification.report_id || "";
 
     let { data: existingProfile, error: profileError } = await supabase

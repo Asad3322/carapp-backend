@@ -227,7 +227,12 @@ const getOwnerProfileForSms = async (ownerId) => {
   return data || null;
 };
 
-const sendOwnerReportSms = async ({ ownerProfile, reportId, plate }) => {
+const sendOwnerReportSms = async ({
+  ownerProfile,
+  reportId,
+  plate,
+  vehicleId,
+}) => {
   try {
     const ownerPhone = ownerProfile?.phone;
 
@@ -239,6 +244,7 @@ const sendOwnerReportSms = async ({ ownerProfile, reportId, plate }) => {
     const magicLinkData = await createOwnerReportMagicLinkService({
       phone: ownerPhone,
       reportId,
+      vehicleId,
     });
 
     const reportLink = magicLinkData.magicLink;
@@ -460,6 +466,7 @@ const createReport = async (req, res) => {
         ownerProfile: ownerProfileForSms,
         reportId: data.id,
         plate: normalizedPlate,
+        vehicleId,
       });
 
       if (smsSent) {
