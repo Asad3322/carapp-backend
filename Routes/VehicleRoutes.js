@@ -16,12 +16,6 @@ const {
 } = require("../Controller/VehicleController");
 
 const flexibleVehicleAuth = (req, res, next) => {
-  const bearerToken = req.headers.authorization?.split(" ")[1];
-
-  if (bearerToken) {
-    return authMiddleware(req, res, next);
-  }
-
   const ownerToken =
     req.headers["x-owner-access-token"] ||
     req.headers["owner-access-token"];
