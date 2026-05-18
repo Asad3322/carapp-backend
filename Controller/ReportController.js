@@ -463,22 +463,7 @@ const createReport = async (req, res) => {
       });
 
       if (smsSent) {
-        const { error: deliveredError } = await supabase
-          .from("reports")
-          .update({
-            status: "delivered",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", data.id);
-
-        if (deliveredError) {
-          console.error(
-            "Report delivered status update error:",
-            deliveredError,
-          );
-        } else {
-          data.status = "delivered";
-        }
+        console.log("✅ Owner SMS notification delivered");
       }
     }
 
