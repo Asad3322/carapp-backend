@@ -362,7 +362,7 @@ const createReport = async (req, res) => {
     const { data: vehicle, error: vehicleError } = await supabase
       .from("vehicles")
       .select("id, owner_id, vehicle_name, licence_plate, vehicle_media")
-      .eq("normalized_plate", normalizedPlate)
+      .eq("licence_plate", normalizedPlate)
       .maybeSingle();
 
     if (vehicleError) {
