@@ -19,7 +19,9 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   "http://localhost:5173",
   "https://car-app-french.vercel.app",
-];
+  "https://mediumaquamarine-partridge-790064.hostingersite.com",
+  process.env.CLIENT_URL,
+].filter(Boolean);
 
 app.use(
   cors({
@@ -28,6 +30,7 @@ app.use(
         return callback(null, true);
       }
 
+      console.log("❌ Blocked Origin:", origin);
       return callback(new Error(`CORS not allowed: ${origin}`));
     },
     credentials: true,
@@ -40,6 +43,14 @@ app.use(
     ],
   }),
 );
+
+// Handle preflight requests
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 // ================= BODY PARSER =================
 app.use(express.json());
